@@ -1,11 +1,14 @@
-import torch
-import numpy as np
+import os
 import random
 import time
-import os
-import models.models as models
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
 from PIL import Image
+
+import models.models as models
 
 
 def fix_seed(seed):
@@ -19,11 +22,11 @@ def get_start_iters(start_iter, dataset_size):
     if start_iter == 0:
         return 0, 0
     start_epoch = (start_iter + 1) // dataset_size
-    start_iter  = (start_iter + 1) %  dataset_size
+    start_iter = (start_iter + 1) % dataset_size
     return start_epoch, start_iter
 
 
-class results_saver():
+class ResultsSaver:
     def __init__(self, opt):
         path = os.path.join(opt.results_dir, opt.name, opt.ckpt_iter)
         self.path_label = os.path.join(path, "label")
@@ -46,12 +49,12 @@ class results_saver():
         im.save(os.path.join(self.path_to_save[mode], name.split("/")[-1]).replace('.jpg', '.png'))
 
 
-class timer():
+class Timer:
     def __init__(self, opt):
         self.prev_time = time.time()
         self.prev_epoch = 0
         self.num_epochs = opt.num_epochs
-        self.file_name = os.path.join(opt.checkpoints_dir, opt.name, "progress.txt")
+        self.file_name = Path(opt.checkpoints_dir) / opt.name / "progress.txt"
 
     def __call__(self, epoch, cur_iter):
         if cur_iter != 0:
@@ -61,13 +64,14 @@ class timer():
         self.prev_time = time.time()
         self.prev_epoch = cur_iter
 
+        msg = f'[epoch {epoch}/{self.num_epochs} - iter {cur_iter}], time:{avg:.3f} \n'
         with open(self.file_name, "a") as log_file:
-            log_file.write('[epoch %d/%d - iter %d], time:%.3f \n' % (epoch, self.num_epochs, cur_iter, avg))
-        print('[epoch %d/%d - iter %d], time:%.3f' % (epoch, self.num_epochs, cur_iter, avg))
+            log_file.write(msg)
+        print(msg)
         return avg
 
 
-class losses_saver():
+class LossesSaver:
     def __init__(self, opt):
         self.name_list = ["Generator", "Vgg", "D_fake", "D_real", "LabelMix"]
         self.opt = opt
@@ -75,12 +79,12 @@ class losses_saver():
         self.freq_save_loss = opt.freq_save_loss
         self.losses = dict()
         self.cur_estimates = np.zeros(len(self.name_list))
-        self.path = os.path.join(self.opt.checkpoints_dir, self.opt.name, "losses")
+        self.path = Path(self.opt.checkpoints_dir, self.opt.name, "losses")
         self.is_first = True
         os.makedirs(self.path, exist_ok=True)
         for name in self.name_list:
             if opt.continue_train:
-                self.losses[name] = np.load(self.path+"/losses.npy", allow_pickle = True).item()[name]
+                self.losses[name] = np.load(self.path / "losses.npy", allow_pickle=True).item()[name]
             else:
                 self.losses[name] = list()
 
@@ -90,27 +94,27 @@ class losses_saver():
                 self.cur_estimates[i] = None
             else:
                 self.cur_estimates[i] += loss.detach().cpu().numpy()
-        if epoch % self.freq_smooth_loss == self.freq_smooth_loss-1:
+        if epoch % self.freq_smooth_loss == self.freq_smooth_loss - 1:
             for i, loss in enumerate(losses):
                 if not self.cur_estimates[i] is None:
-                    self.losses[self.name_list[i]].append(self.cur_estimates[i]/self.opt.freq_smooth_loss)
+                    self.losses[self.name_list[i]].append(self.cur_estimates[i] / self.opt.freq_smooth_loss)
                     self.cur_estimates[i] = 0
-        if epoch % self.freq_save_loss == self.freq_save_loss-1:
+        if epoch % self.freq_save_loss == self.freq_save_loss - 1:
             self.plot_losses()
-            np.save(os.path.join(self.opt.checkpoints_dir, self.opt.name, "losses", "losses"), self.losses)
+            np.save(self.path / "losses", self.losses)
 
     def plot_losses(self):
         for curve in self.losses:
-            fig,ax = plt.subplots(1)
-            n = np.array(range(len(self.losses[curve])))*self.opt.freq_smooth_loss
+            fig, ax = plt.subplots(1)
+            n = np.array(range(len(self.losses[curve]))) * self.opt.freq_smooth_loss
             plt.plot(n[1:], self.losses[curve][1:])
             plt.ylabel('loss')
             plt.xlabel('epochs')
 
-            plt.savefig(os.path.join(self.opt.checkpoints_dir, self.opt.name, "losses", '%s.png' % (curve)),  dpi=600)
+            plt.savefig(self.path / f'{curve}.png', dpi=600)
             plt.close(fig)
 
-        fig,ax = plt.subplots(1)
+        fig, ax = plt.subplots(1)
         for curve in self.losses:
             if np.isnan(self.losses[curve][0]):
                 continue
@@ -118,17 +122,17 @@ class losses_saver():
         plt.ylabel('loss')
         plt.xlabel('epochs')
         plt.legend(loc="upper right")
-        plt.savefig(os.path.join(self.opt.checkpoints_dir, self.opt.name, "losses", 'combined.png'), dpi=600)
+        plt.savefig(self.path / 'combined.png', dpi=600)
         plt.close(fig)
 
 
-def update_EMA(model, cur_iter, dataloader, opt, force_run_stats=False):
+def update_ema(model, cur_iter, dataloader, opt, force_run_stats=False):
     # update weights based on new generator weights
     with torch.no_grad():
         for key in model.module.netEMA.state_dict():
             model.module.netEMA.state_dict()[key].data.copy_(
                 model.module.netEMA.state_dict()[key].data * opt.EMA_decay +
-                model.module.netG.state_dict()[key].data   * (1 - opt.EMA_decay)
+                model.module.netG.state_dict()[key].data * (1 - opt.EMA_decay)
             )
     # collect running stats for batchnorm before FID computation, image or network saving
     condition_run_stats = (force_run_stats or
@@ -152,32 +156,32 @@ def save_networks(opt, cur_iter, model, latest=False, best=False):
     path = os.path.join(opt.checkpoints_dir, opt.name, "models")
     os.makedirs(path, exist_ok=True)
     if latest:
-        torch.save(model.module.netG.state_dict(), path+'/%s_G.pth' % ("latest"))
-        torch.save(model.module.netD.state_dict(), path+'/%s_D.pth' % ("latest"))
+        torch.save(model.module.netG.state_dict(), path + '/latest_G.pth')
+        torch.save(model.module.netD.state_dict(), path + '/latest_D.pth')
         if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path+'/%s_EMA.pth' % ("latest"))
-        with open(os.path.join(opt.checkpoints_dir, opt.name)+"/latest_iter.txt", "w") as f:
+            torch.save(model.module.netEMA.state_dict(), path + '/latest_EMA.pth')
+        with open(os.path.join(opt.checkpoints_dir, opt.name) + "/latest_iter.txt", "w") as f:
             f.write(str(cur_iter))
     elif best:
-        torch.save(model.module.netG.state_dict(), path+'/%s_G.pth' % ("best"))
-        torch.save(model.module.netD.state_dict(), path+'/%s_D.pth' % ("best"))
+        torch.save(model.module.netG.state_dict(), path + '/best_G.pth')
+        torch.save(model.module.netD.state_dict(), path + '/best_D.pth')
         if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path+'/%s_EMA.pth' % ("best"))
-        with open(os.path.join(opt.checkpoints_dir, opt.name)+"/best_iter.txt", "w") as f:
+            torch.save(model.module.netEMA.state_dict(), path + '/best_EMA.pth')
+        with open(os.path.join(opt.checkpoints_dir, opt.name) + "/best_iter.txt", "w") as f:
             f.write(str(cur_iter))
     else:
-        torch.save(model.module.netG.state_dict(), path+'/%d_G.pth' % (cur_iter))
-        torch.save(model.module.netD.state_dict(), path+'/%d_D.pth' % (cur_iter))
+        torch.save(model.module.netG.state_dict(), path + f'/{cur_iter}_G.pth')
+        torch.save(model.module.netD.state_dict(), path + f'/{cur_iter}_D.pth')
         if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path+'/%d_EMA.pth' % (cur_iter))
+            torch.save(model.module.netEMA.state_dict(), path + f'/{cur_iter}_EMA.pth')
 
 
-class image_saver():
+class ImageSaver:
     def __init__(self, opt):
         self.cols = 4
         self.rows = 3
         self.grid = 5
-        self.path = os.path.join(opt.checkpoints_dir, opt.name, "images")+"/"
+        self.path = os.path.join(opt.checkpoints_dir, opt.name, "images") + "/"
         self.opt = opt
         self.num_cl = opt.label_nc + 2
         os.makedirs(self.path, exist_ok=True)
@@ -204,11 +208,11 @@ class image_saver():
             else:
                 im = tens_to_im(batch[i])
             plt.axis("off")
-            fig.add_subplot(self.rows, self.cols, i+1)
+            fig.add_subplot(self.rows, self.cols, i + 1)
             plt.axis("off")
             plt.imshow(im)
         fig.tight_layout()
-        plt.savefig(self.path+str(cur_iter)+"_"+name)
+        plt.savefig(self.path + str(cur_iter) + "_" + name)
         plt.close()
 
 
@@ -219,9 +223,10 @@ def tens_to_im(tens):
 
 
 def tens_to_lab(tens, num_cl):
-    label_tensor = Colorize(tens, num_cl)
+    label_tensor = colorize(tens, num_cl)
     label_numpy = np.transpose(label_tensor.numpy(), (1, 2, 0))
     return label_numpy
+
 
 ###############################################################################
 # Code below from
@@ -234,7 +239,7 @@ def uint82bin(n, count=8):
     return ''.join([str((n >> y) & 1) for y in range(count - 1, -1, -1)])
 
 
-def Colorize(tens, num_cl):
+def colorize(tens, num_cl):
     cmap = labelcolormap(num_cl)
     cmap = torch.from_numpy(cmap[:num_cl])
     size = tens.size()
@@ -249,31 +254,29 @@ def Colorize(tens, num_cl):
     return color_image
 
 
-def labelcolormap(N):
-    if N == 35:
+def labelcolormap(n):
+    if n == 35:
         cmap = np.array([(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0), (111, 74, 0), (81, 0, 81),
-                         (128, 64, 128), (244, 35, 232), (250, 170, 160), (230, 150, 140), (70, 70, 70), (102, 102, 156), (190, 153, 153),
-                         (180, 165, 180), (150, 100, 100), (150, 120, 90), (153, 153, 153), (153, 153, 153), (250, 170, 30), (220, 220, 0),
-                         (107, 142, 35), (152, 251, 152), (70, 130, 180), (220, 20, 60), (255, 0, 0), (0, 0, 142), (0, 0, 70),
+                         (128, 64, 128), (244, 35, 232), (250, 170, 160), (230, 150, 140), (70, 70, 70),
+                         (102, 102, 156), (190, 153, 153),
+                         (180, 165, 180), (150, 100, 100), (150, 120, 90), (153, 153, 153), (153, 153, 153),
+                         (250, 170, 30), (220, 220, 0),
+                         (107, 142, 35), (152, 251, 152), (70, 130, 180), (220, 20, 60), (255, 0, 0), (0, 0, 142),
+                         (0, 0, 70),
                          (0, 60, 100), (0, 0, 90), (0, 0, 110), (0, 80, 100), (0, 0, 230), (119, 11, 32), (0, 0, 142)],
                         dtype=np.uint8)
     else:
-        cmap = np.zeros((N, 3), dtype=np.uint8)
-        for i in range(N):
+        cmap = np.zeros((n, 3), dtype=np.uint8)
+        for i in range(n):
             r, g, b = 0, 0, 0
-            id = i + 1  # let's give 0 a color
+            idx = i + 1  # let's give 0 a color
             for j in range(7):
-                str_id = uint82bin(id)
+                str_id = uint82bin(idx)
                 r = r ^ (np.uint8(str_id[-1]) << (7 - j))
                 g = g ^ (np.uint8(str_id[-2]) << (7 - j))
                 b = b ^ (np.uint8(str_id[-3]) << (7 - j))
-                id = id >> 3
+                idx = idx >> 3
             cmap[i, 0] = r
             cmap[i, 1] = g
             cmap[i, 2] = b
     return cmap
-
-
-
-
-

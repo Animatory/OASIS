@@ -1,6 +1,7 @@
 import torch
-import torch.nn.functional as F
 import torch.nn as nn
+import torch.nn.functional as F
+
 from models.vggloss import VGG19
 
 
@@ -11,9 +12,9 @@ class losses_computer():
             self.labelmix_function = torch.nn.MSELoss()
 
     def loss(self, input, label, for_real):
-        #--- balancing classes ---
+        # --- balancing classes ---
         weight_map = get_class_balancing(self.opt, input, label)
-        #--- n+1 loss ---
+        # --- n+1 loss ---
         target = get_n1_target(self.opt, input, label, for_real)
         loss = F.cross_entropy(input, target, reduction='none')
         if for_real:
@@ -23,7 +24,7 @@ class losses_computer():
         return loss
 
     def loss_labelmix(self, mask, output_D_mixed, output_D_fake, output_D_real):
-        mixed_D_output = mask*output_D_real+(1-mask)*output_D_fake
+        mixed_D_output = mask * output_D_real + (1 - mask) * output_D_fake
         return self.labelmix_function(mixed_D_output, output_D_mixed)
 
 
@@ -49,7 +50,7 @@ def get_n1_target(opt, input, label, target_is_real):
     integers = torch.argmax(label, dim=1)
     targets = targets[:, 0, :, :] * num_of_classes
     integers += targets.long()
-    integers = torch.clamp(integers, min=num_of_classes-1) - num_of_classes + 1
+    integers = torch.clamp(integers, min=num_of_classes - 1) - num_of_classes + 1
     return integers
 
 

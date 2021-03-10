@@ -12,7 +12,7 @@ opt = config.read_arguments(train=False)
 _, dataloader_val = dataloaders.get_dataloaders(opt)
 
 #--- create utils ---#
-image_saver = utils.results_saver(opt)
+image_saver = utils.ResultsSaver(opt)
 
 #--- create models ---#
 model = models.OASIS_model(opt)

@@ -1,7 +1,8 @@
-import torch.nn as nn
-import models.norms as norms
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
+
+import models.norms as norms
 
 
 class OASIS_Generator(nn.Module):
@@ -10,20 +11,20 @@ class OASIS_Generator(nn.Module):
         self.opt = opt
         sp_norm = norms.get_spectral_norm(opt)
         ch = opt.channels_G
-        self.channels = [16*ch, 16*ch, 16*ch, 8*ch, 4*ch, 2*ch, 1*ch]
+        self.channels = [16 * ch, 16 * ch, 16 * ch, 8 * ch, 4 * ch, 2 * ch, 1 * ch]
         self.init_W, self.init_H = self.compute_latent_vector_size(opt)
         self.conv_img = nn.Conv2d(self.channels[-1], 3, 3, padding=1)
         self.up = nn.Upsample(scale_factor=2)
         self.body = nn.ModuleList([])
-        for i in range(len(self.channels)-1):
-            self.body.append(ResnetBlock_with_SPADE(self.channels[i], self.channels[i+1], opt))
+        for i in range(len(self.channels) - 1):
+            self.body.append(ResnetBlock_with_SPADE(self.channels[i], self.channels[i + 1], opt))
         if not self.opt.no_3dnoise:
             self.fc = nn.Conv2d(self.opt.semantic_nc + self.opt.z_dim, 16 * ch, 3, padding=1)
         else:
             self.fc = nn.Conv2d(self.opt.semantic_nc, 16 * ch, 3, padding=1)
 
     def compute_latent_vector_size(self, opt):
-        w = opt.crop_size // (2**(opt.num_res_blocks-1))
+        w = opt.crop_size // (2 ** (opt.num_res_blocks - 1))
         h = round(w / opt.aspect_ratio)
         return h, w
 
@@ -36,12 +37,12 @@ class OASIS_Generator(nn.Module):
             z = torch.randn(seg.size(0), self.opt.z_dim, dtype=torch.float32, device=dev)
             z = z.view(z.size(0), self.opt.z_dim, 1, 1)
             z = z.expand(z.size(0), self.opt.z_dim, seg.size(2), seg.size(3))
-            seg = torch.cat((z, seg), dim = 1)
+            seg = torch.cat((z, seg), dim=1)
         x = F.interpolate(seg, size=(self.init_W, self.init_H))
         x = self.fc(x)
         for i in range(self.opt.num_res_blocks):
             x = self.body[i](x, seg)
-            if i < self.opt.num_res_blocks-1:
+            if i < self.opt.num_res_blocks - 1:
                 x = self.up(x)
         x = self.conv_img(F.leaky_relu(x, 2e-1))
         x = F.tanh(x)

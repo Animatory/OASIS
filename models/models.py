@@ -1,30 +1,32 @@
-from models.sync_batchnorm import DataParallelWithCallback
-import models.generator as generators
-import models.discriminator as discriminators
-import os
 import copy
+import os
+
 import torch
 import torch.nn as nn
 from torch.nn import init
-import models.losses as losses
+
+import discriminator as discriminators
+import generator as generators
+import losses
+from sync_batchnorm import DataParallelWithCallback
 
 
 class OASIS_model(nn.Module):
     def __init__(self, opt):
         super(OASIS_model, self).__init__()
         self.opt = opt
-        #--- generator and discriminator ---
+        # --- generator and discriminator ---
         self.netG = generators.OASIS_Generator(opt)
         if opt.phase == "train":
             self.netD = discriminators.OASIS_Discriminator(opt)
         self.print_parameter_count()
         self.init_networks()
-        #--- EMA of generator weights ---
+        # --- EMA of generator weights ---
         with torch.no_grad():
             self.netEMA = copy.deepcopy(self.netG) if not opt.no_EMA else None
-        #--- load previous checkpoints if needed ---
+        # --- load previous checkpoints if needed ---
         self.load_checkpoints()
-        #--- perceptual loss ---#
+        # --- perceptual loss ---#
         if opt.phase == "train":
             if opt.add_vgg_loss:
                 self.VGG_loss = losses.VGGLoss(self.opt.gpu_ids)
@@ -57,8 +59,9 @@ class OASIS_model(nn.Module):
             if not self.opt.no_labelmix:
                 mixed_inp, mask = generate_labelmix(label, fake, image)
                 output_D_mixed = self.netD(mixed_inp)
-                loss_D_lm = self.opt.lambda_labelmix * losses_computer.loss_labelmix(mask, output_D_mixed, output_D_fake,
-                                                                                output_D_real)
+                loss_D_lm = self.opt.lambda_labelmix * losses_computer.loss_labelmix(mask, output_D_mixed,
+                                                                                     output_D_fake,
+                                                                                     output_D_real)
                 loss_D += loss_D_lm
             else:
                 loss_D_lm = None
@@ -150,10 +153,10 @@ def preprocess_input(opt, data):
 
 
 def generate_labelmix(label, fake_image, real_image):
-    target_map = torch.argmax(label, dim = 1, keepdim = True)
+    target_map = torch.argmax(label, dim=1, keepdim=True)
     all_classes = torch.unique(target_map)
     for c in all_classes:
-        target_map[target_map == c] = torch.randint(0,2,(1,))
+        target_map[target_map == c] = torch.randint(0, 2, (1,))
     target_map = target_map.float()
-    mixed_image = target_map*real_image+(1-target_map)*fake_image
+    mixed_image = target_map * real_image + (1 - target_map) * fake_image
     return mixed_image, target_map

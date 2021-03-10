@@ -1,7 +1,9 @@
-import torch.nn.utils.spectral_norm as spectral_norm
-from models.sync_batchnorm import SynchronizedBatchNorm2d
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.utils.spectral_norm as spectral_norm
+
+from models.sync_batchnorm import SynchronizedBatchNorm2d
 
 
 class SPADE(nn.Module):
