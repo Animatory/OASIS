@@ -15,16 +15,20 @@ class OASIS_Discriminator(nn.Module):
         self.body_down = nn.ModuleList([])
         # encoder part
         for i in range(opt.num_res_blocks):
-            self.body_down.append(residual_block_D(self.channels[i], self.channels[i + 1], opt, -1, first=(i == 0)))
+            self.body_down.append(DiscriminatorResidualBlock(self.channels[i], self.channels[i + 1],
+                                                             sp_norm, -1, first=not i))
         # decoder part
-        self.body_up.append(residual_block_D(self.channels[-1], self.channels[-2], opt, 1))
+        self.body_up.append(DiscriminatorResidualBlock(self.channels[-1], self.channels[-2], sp_norm, 1))
         for i in range(1, opt.num_res_blocks - 1):
-            self.body_up.append(residual_block_D(2 * self.channels[-1 - i], self.channels[-2 - i], opt, 1))
-        self.body_up.append(residual_block_D(2 * self.channels[1], 64, opt, 1))
-        self.layer_up_last = nn.Conv2d(64, output_channel, 1, 1, 0)
+            self.body_up.append(DiscriminatorResidualBlock(2 * self.channels[-1 - i], self.channels[-2 - i],
+                                                           sp_norm, 1))
+        self.body_up.append(DiscriminatorResidualBlock(fin=2 * self.channels[1], fout=self.channels[1] // 2,
+                                                       norm_layer=sp_norm, up_or_down=1))
+        self.layer_up_last = nn.Conv2d(self.channels[1] // 2, output_channel, 1, 1, 0)
 
-    def forward(self, input):
-        x = input
+        self.init_weights()
+
+    def forward(self, x):
         # encoder
         encoder_res = list()
         for i in range(len(self.body_down)):
@@ -37,16 +41,28 @@ class OASIS_Discriminator(nn.Module):
         ans = self.layer_up_last(x)
         return ans
 
+    def init_weights(self, gain=0.02):
+        for m in self.modules():
+            classname = m.__class__.__name__
+            if classname.find('BatchNorm2d') != -1:
+                if hasattr(m, 'weight') and m.weight is not None:
+                    nn.init.normal_(m.weight.data, 1.0, gain)
+                if hasattr(m, 'bias') and m.bias is not None:
+                    nn.init.constant_(m.bias.data, 0.0)
+            elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
+                nn.init.xavier_normal_(m.weight.data, gain=gain)
+                if hasattr(m, 'bias') and m.bias is not None:
+                    nn.init.constant_(m.bias.data, 0.0)
 
-class residual_block_D(nn.Module):
-    def __init__(self, fin, fout, opt, up_or_down, first=False):
+
+class DiscriminatorResidualBlock(nn.Module):
+    def __init__(self, fin, fout, norm_layer, up_or_down, first=False):
         super().__init__()
         # Attributes
         self.up_or_down = up_or_down
         self.first = first
         self.learned_shortcut = (fin != fout)
         fmiddle = fout
-        norm_layer = norms.get_spectral_norm(opt)
         if first:
             self.conv1 = nn.Sequential(norm_layer(nn.Conv2d(fin, fmiddle, 3, 1, 1)))
         else:
