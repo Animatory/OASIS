@@ -8,8 +8,6 @@ import numpy as np
 import torch
 from PIL import Image
 
-import models.models as models
-
 
 def plot_images(imgs, names=None, show=True, nrows=None, ncols=None, figsize=(16, 8), title=None):
     if not isinstance(imgs, list):
@@ -167,57 +165,6 @@ class LossesSaver:
         plt.close(fig)
 
 
-def update_ema(model, cur_iter, dataloader, opt, force_run_stats=False):
-    # update weights based on new generator weights
-    with torch.no_grad():
-        decay = opt.EMA_decay
-        G_state_dict = model.module.netG.state_dict()
-        EMA_state_dict = model.module.netEMA.state_dict()
-        for key, value in EMA_state_dict.items():
-            EMA_state_dict[key].data.copy_(value.data * decay +
-                                           G_state_dict[key].data * (1 - decay))
-
-    # collect running stats for batchnorm before FID computation, image or network saving
-    condition_run_stats = (
-            force_run_stats or
-            cur_iter % opt.freq_print == 0 or
-            cur_iter % opt.freq_fid == 0 or
-            cur_iter % opt.freq_save_ckpt == 0 or
-            cur_iter % opt.freq_save_latest == 0
-    )
-    if condition_run_stats:
-        with torch.no_grad():
-            for num_upd, data_i in enumerate(dataloader):
-                data = models.preprocess_input(opt, data_i)
-                model(**data, mode="generate", is_ema=True)
-                if num_upd > 50:
-                    break
-
-
-def save_networks(opt, cur_iter, model, latest=False, best=False):
-    path = opt.checkpoints_dir / opt.name / "models"
-    path.mkdir(exist_ok=True)
-    if latest:
-        torch.save(model.module.netG.state_dict(), path / 'latest_G.pth')
-        torch.save(model.module.netD.state_dict(), path / 'latest_D.pth')
-        if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path / 'latest_EMA.pth')
-        file = opt.checkpoints_dir / opt.name / "latest_iter.txt"
-        file.write_text(str(cur_iter))
-    elif best:
-        torch.save(model.module.netG.state_dict(), path / 'best_G.pth')
-        torch.save(model.module.netD.state_dict(), path / 'best_D.pth')
-        if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path / 'best_EMA.pth')
-        file = opt.checkpoints_dir / opt.name / "best_iter.txt"
-        file.write_text(str(cur_iter))
-    else:
-        torch.save(model.module.netG.state_dict(), path / f'{cur_iter}_G.pth')
-        torch.save(model.module.netD.state_dict(), path / f'{cur_iter}_D.pth')
-        if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path / f'{cur_iter}_EMA.pth')
-
-
 class ImageSaver:
     def __init__(self, opt):
         self.cols = 4
@@ -252,7 +199,7 @@ class ImageSaver:
             plt.axis("off")
             plt.imshow(im)
         fig.tight_layout()
-        plt.savefig(self.path + str(cur_iter) + "_" + name)
+        plt.savefig(self.path / f"{cur_iter}_{name}")
         plt.close()
 
 
@@ -266,7 +213,13 @@ def make_one_hot(labels, num_classes):
 def tens_to_im(tens):
     out = (tens + 1) / 2
     out.clamp(0, 1)
-    return np.transpose(out.detach().cpu().numpy(), (1, 2, 0))
+    out = out.detach().cpu().numpy()
+    if tens.ndim == 3:
+        out = np.transpose(out, (1, 2, 0))
+    else:
+        out = np.transpose(out, (0, 2, 3, 1))
+    out = (out * 255).astype('uint8')
+    return out
 
 
 def tens_to_lab(tens, num_cl):

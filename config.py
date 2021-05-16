@@ -69,6 +69,8 @@ def add_all_arguments(parser, train):
         parser.add_argument('--beta2', type=float, default=0.999, help='momentum term of adam')
         parser.add_argument('--lr_g', type=float, default=0.0001, help='G learning rate, default=0.0001')
         parser.add_argument('--lr_d', type=float, default=0.0004, help='D learning rate, default=0.0004')
+        parser.add_argument('--opt_level', type=str, default='O0',
+                            help='opt level for mixed precision training, default=0.0004')
 
         parser.add_argument('--channels_D', type=int, default=64,
                             help='Number of filters in first conv layer in discriminator')

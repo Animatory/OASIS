@@ -31,9 +31,9 @@ class LossesComputer:
 
 def get_class_balancing(opt, label):
     nc = label.shape[1]
-    coefficients = torch.ones(nc + 1)
+    coefficients = torch.ones(nc + 1, dtype=label.dtype)
     if not opt.no_balancing_inloss:
-        class_occurrence = torch.cat([torch.zeros(1, device=label.device),
+        class_occurrence = torch.cat([torch.zeros(1, device=label.device, dtype=label.dtype),
                                       label.sum(dim=(0, 2, 3))])
         num_of_classes = torch.nonzero(class_occurrence, as_tuple=False).numel()
         coefficients = torch.reciprocal(class_occurrence) * (label.numel() / num_of_classes / nc)

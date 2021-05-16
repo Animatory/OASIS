@@ -66,6 +66,9 @@ class DataParallelWithCallback(DataParallel):
         execute_replication_callbacks(modules)
         return modules
 
+    def __getattr__(self, item):
+        return getattr(self.module, item)
+
 
 def patch_replication_callback(data_parallel):
     """

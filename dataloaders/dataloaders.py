@@ -20,9 +20,9 @@ def get_dataloaders(opt):
     dataset_val = file.__dict__[dataset_name].__dict__[dataset_name](opt, for_metrics=True)
     print(f"Created {dataset_name}, size train: {len(dataset_train)}, size val: {len(dataset_val)}")
 
-    dataloader_train = data.DataLoader(dataset_train, batch_size=opt.batch_size,
-                                       shuffle=True, drop_last=True, num_workers=12)
-    dataloader_val = data.DataLoader(dataset_val, batch_size=opt.batch_size,
-                                     shuffle=False, drop_last=False, num_workers=12)
+    dataloader_train = data.DataLoader(dataset_train, batch_size=opt.batch_size, persistent_workers=True,
+                                       shuffle=True, drop_last=True, num_workers=8)
+    dataloader_val = data.DataLoader(dataset_val, batch_size=opt.batch_size, persistent_workers=True,
+                                     shuffle=False, drop_last=False, num_workers=8)
 
     return dataloader_train, dataloader_val

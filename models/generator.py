@@ -12,41 +12,62 @@ class OASIS_Generator(nn.Module):
         sp_norm = norms.get_spectral_norm(opt)
         ch = opt.channels_G
         self.channels = [16 * ch, 16 * ch, 16 * ch, 8 * ch, 4 * ch, 2 * ch, 1 * ch]
-        self.init_W, self.init_H = self.compute_latent_vector_size(opt)
+        self.init_w = opt.crop_size // (2 ** (opt.num_res_blocks - 1))
+        self.init_h = round(self.init_w / opt.aspect_ratio)
         self.conv_img = nn.Conv2d(self.channels[-1], 3, 3, padding=1)
+
         self.up = nn.Upsample(scale_factor=2)
         self.body = nn.ModuleList([])
-        for i in range(len(self.channels) - 1):
-            self.body.append(ResnetBlock_with_SPADE(self.channels[i], self.channels[i + 1], opt))
-        if not self.opt.no_3dnoise:
-            self.fc = nn.Conv2d(self.opt.semantic_nc + self.opt.z_dim, 16 * ch, 3, padding=1)
+        for in_ch, out_ch in zip(self.channels[:-1], self.channels[1:]):
+            self.body.append(ResnetBlock_with_SPADE(in_ch, out_ch, opt))
+
+        last_nc = self.opt.semantic_nc + (0 if self.opt.no_3dnoise else self.opt.z_dim)
+        self.fc = nn.Conv2d(last_nc, 16 * ch, 3, padding=1)
+
+        self.init_weights()
+
+    def forward(self, segm, noise=None, zero_noise=False):
+        b, c, h, w = segm.shape
+        zeros = torch.zeros(b, self.opt.z_dim, dtype=segm.dtype,
+                            device=segm.device, requires_grad=False)
+        if zero_noise:
+            noise = zeros
         else:
-            self.fc = nn.Conv2d(self.opt.semantic_nc, 16 * ch, 3, padding=1)
+            if noise is None:
+                log_var = zeros
+                mu = zeros
+            else:
+                mu, log_var = torch.chunk(noise, 2, dim=1)
+            std = torch.exp(0.5 * log_var)
+            noise = torch.randn_like(std)
+            noise = noise * std + mu
 
-    def compute_latent_vector_size(self, opt):
-        w = opt.crop_size // (2 ** (opt.num_res_blocks - 1))
-        h = round(w / opt.aspect_ratio)
-        return h, w
+        if noise.ndim == 2:
+            noise = noise[:, :, None, None].expand(b, self.opt.z_dim, h, w)
 
-    def forward(self, input, z=None):
-        seg = input
-        if self.opt.gpu_ids != "-1":
-            seg.cuda()
-        if not self.opt.no_3dnoise:
-            dev = seg.get_device() if self.opt.gpu_ids != "-1" else "cpu"
-            z = torch.randn(seg.size(0), self.opt.z_dim, dtype=torch.float32, device=dev)
-            z = z.view(z.size(0), self.opt.z_dim, 1, 1)
-            z = z.expand(z.size(0), self.opt.z_dim, seg.size(2), seg.size(3))
-            seg = torch.cat((z, seg), dim=1)
-        x = F.interpolate(seg, size=(self.init_W, self.init_H))
+        segm = torch.cat((noise, segm), dim=1)
+        x = F.interpolate(segm, size=(self.init_w, self.init_h))
         x = self.fc(x)
         for i in range(self.opt.num_res_blocks):
-            x = self.body[i](x, seg)
+            x = self.body[i](x, segm)
             if i < self.opt.num_res_blocks - 1:
                 x = self.up(x)
         x = self.conv_img(F.leaky_relu(x, 2e-1))
-        x = F.tanh(x)
+        x = torch.tanh(x)
         return x
+
+    def init_weights(self, gain=0.02):
+        for m in self.modules():
+            classname = m.__class__.__name__
+            if classname.find('BatchNorm2d') != -1:
+                if hasattr(m, 'weight') and m.weight is not None:
+                    nn.init.normal_(m.weight.data, 1.0, gain)
+                if hasattr(m, 'bias') and m.bias is not None:
+                    nn.init.constant_(m.bias.data, 0.0)
+            elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
+                nn.init.xavier_normal_(m.weight.data, gain=gain)
+                if hasattr(m, 'bias') and m.bias is not None:
+                    nn.init.constant_(m.bias.data, 0.0)
 
 
 class ResnetBlock_with_SPADE(nn.Module):
