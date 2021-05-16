@@ -1,9 +1,13 @@
 import random
-import torch
-from torchvision import transforms as TR
-import os
-from PIL import Image
+from pathlib import Path
+
+import cv2
 import numpy as np
+import torch
+from PIL import Image
+from albumentations import Compose, RandomResizedCrop, HorizontalFlip, Normalize, \
+    ShiftScaleRotate, CenterCrop, SmallestMaxSize
+from albumentations.pytorch import ToTensorV2
 
 
 class Ade20kDataset(torch.utils.data.Dataset):
@@ -12,62 +16,59 @@ class Ade20kDataset(torch.utils.data.Dataset):
             opt.load_size = 256
         else:
             opt.load_size = 286
+
         opt.crop_size = 256
         opt.label_nc = 150
         opt.contain_dontcare_label = True
-        opt.semantic_nc = 151 # label_nc + unknown
+        opt.semantic_nc = 151  # label_nc + unknown
         opt.cache_filelist_read = False
         opt.cache_filelist_write = False
         opt.aspect_ratio = 1.0
 
         self.opt = opt
         self.for_metrics = for_metrics
-        self.images, self.labels, self.paths = self.list_images()
+        self.images, self.labels = self.list_images()
 
-    def __len__(self,):
+        transforms_list = []
+        if not (self.opt.phase == "test" or self.for_metrics):
+            transforms_list.extend([
+                HorizontalFlip(),
+                RandomResizedCrop(opt.crop_size, opt.crop_size, scale=(0.6, 1.), ratio=(0.9, 1 / 0.9)),
+                ShiftScaleRotate(rotate_limit=10),
+            ])
+        else:
+            transforms_list.extend([
+                SmallestMaxSize(opt.crop_size),
+                CenterCrop(opt.crop_size, opt.crop_size)
+            ])
+        transforms_list.extend([
+            Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            ToTensorV2()
+        ])
+        self.transforms = Compose(transforms_list)
+
+    def __len__(self):
         return len(self.images)
 
     def __getitem__(self, idx):
-        image = Image.open(os.path.join(self.paths[0], self.images[idx])).convert('RGB')
-        label = Image.open(os.path.join(self.paths[1], self.labels[idx]))
-        image, label = self.transforms(image, label)
-        label = label * 255
-        return {"image": image, "label": label, "name": self.images[idx]}
+        image = np.array(Image.open(self.images[idx]).convert('RGB'))
+        label = np.array(Image.open(self.labels[idx]))
+        # assert image.shape[:2] == label.shape[:2]
+        if image.shape[:2] != label.shape[:2]:
+            image = cv2.resize(image, label.shape[::-1])
+        data = self.transforms(image=image, mask=label)
+        sample = {"image": data['image'], "label": data['mask'].long(), "name": self.images[idx].name}
+        return sample
 
     def list_images(self):
+        dataroot = self.opt.dataroot
         mode = "validation" if self.opt.phase == "test" or self.for_metrics else "training"
-        path_img = os.path.join(self.opt.dataroot, "images", mode)
-        path_lab = os.path.join(self.opt.dataroot, "annotations", mode)
-        img_list = os.listdir(path_img)
-        lab_list = os.listdir(path_lab)
-        img_list = [filename for filename in img_list if ".png" in filename or ".jpg" in filename]
-        lab_list = [filename for filename in lab_list if ".png" in filename or ".jpg" in filename]
-        images = sorted(img_list)
-        labels = sorted(lab_list)
-        assert len(images)  == len(labels), "different len of images and labels %s - %s" % (len(images), len(labels))
-        for i in range(len(images)):
-            assert os.path.splitext(images[i])[0] == os.path.splitext(labels[i])[0], '%s and %s are not matching' % (images[i], labels[i])
-        return images, labels, (path_img, path_lab)
+        dataroot_img = dataroot / 'images' / mode
+        dataroot_ann = dataroot / 'annotations' / mode
+        images = sorted(dataroot_img.glob('**/*.jpg'))
+        labels = sorted(dataroot_ann.glob('**/*.png'))
 
-    def transforms(self, image, label):
-        assert image.size == label.size
-        # resize
-        new_width, new_height = (self.opt.load_size, self.opt.load_size)
-        image = TR.functional.resize(image, (new_width, new_height), Image.BICUBIC)
-        label = TR.functional.resize(label, (new_width, new_height), Image.NEAREST)
-        # crop
-        crop_x = random.randint(0, np.maximum(0, new_width -  self.opt.crop_size))
-        crop_y = random.randint(0, np.maximum(0, new_height - self.opt.crop_size))
-        image = image.crop((crop_x, crop_y, crop_x + self.opt.crop_size, crop_y + self.opt.crop_size))
-        label = label.crop((crop_x, crop_y, crop_x + self.opt.crop_size, crop_y + self.opt.crop_size))
-        # flip
-        if not (self.opt.phase == "test" or self.opt.no_flip or self.for_metrics):
-            if random.random() < 0.5:
-                image = TR.functional.hflip(image)
-                label = TR.functional.hflip(label)
-        # to tensor
-        image = TR.functional.to_tensor(image)
-        label = TR.functional.to_tensor(label)
-        # normalize
-        image = TR.functional.normalize(image, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        return image, label
+        assert len(images) == len(labels), f"different len of images and labels {len(images)} - {len(labels)}"
+        for image_path, label_path in zip(images, labels):
+            assert image_path.stem == label_path.stem, f'{image_path} and {label_path} don not match'
+        return images, labels

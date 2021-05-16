@@ -11,6 +11,48 @@ from PIL import Image
 import models.models as models
 
 
+def plot_images(imgs, names=None, show=True, nrows=None, ncols=None, figsize=(16, 8), title=None):
+    if not isinstance(imgs, list):
+        imgs = [imgs]
+
+    from math import ceil
+    if nrows is None and ncols is None:
+        nrows = 1
+        ncols = len(imgs)
+    elif nrows is None:
+        nrows = ceil(len(imgs) / ncols)
+    elif ncols is None:
+        ncols = ceil(len(imgs) / nrows)
+
+    fig, axs = plt.subplots(ncols=ncols, nrows=nrows, figsize=figsize)
+    if nrows == 1 and ncols == 1:
+        axs.imshow(imgs[0])
+        axs.set_axis_off()
+        if names and len(names) > 0:
+            axs.set_title(names[0], fontsize=15)
+    elif nrows == 1 or ncols == 1:
+        for j, ax in enumerate(axs):
+            ax.imshow(imgs[j])
+            ax.set_axis_off()
+            if names and j < len(names):
+                ax.set_title(names[j], fontsize=15)
+    else:
+        for j, ax in enumerate(axs):
+            for k, sub_ax in enumerate(ax):
+                image_id = j * ncols + k
+                sub_ax.set_axis_off()
+                if image_id < len(imgs):
+                    sub_ax.imshow(imgs[image_id])
+                    if names and image_id < len(names):
+                        sub_ax.set_title(names[image_id], fontsize=15)
+    if show:
+        plt.show()
+    else:
+        fig.tight_layout()
+        plt.savefig(title)
+        plt.close()
+
+
 def fix_seed(seed):
     random.seed(seed)
     torch.manual_seed(seed)
@@ -21,8 +63,7 @@ def fix_seed(seed):
 def get_start_iters(start_iter, dataset_size):
     if start_iter == 0:
         return 0, 0
-    start_epoch = (start_iter + 1) // dataset_size
-    start_iter = (start_iter + 1) % dataset_size
+    start_epoch, start_iter = divmod(start_iter + 1, dataset_size)
     return start_epoch, start_iter
 
 
@@ -129,51 +170,52 @@ class LossesSaver:
 def update_ema(model, cur_iter, dataloader, opt, force_run_stats=False):
     # update weights based on new generator weights
     with torch.no_grad():
-        for key in model.module.netEMA.state_dict():
-            model.module.netEMA.state_dict()[key].data.copy_(
-                model.module.netEMA.state_dict()[key].data * opt.EMA_decay +
-                model.module.netG.state_dict()[key].data * (1 - opt.EMA_decay)
-            )
+        decay = opt.EMA_decay
+        G_state_dict = model.module.netG.state_dict()
+        EMA_state_dict = model.module.netEMA.state_dict()
+        for key, value in EMA_state_dict.items():
+            EMA_state_dict[key].data.copy_(value.data * decay +
+                                           G_state_dict[key].data * (1 - decay))
+
     # collect running stats for batchnorm before FID computation, image or network saving
-    condition_run_stats = (force_run_stats or
-                           cur_iter % opt.freq_print == 0 or
-                           cur_iter % opt.freq_fid == 0 or
-                           cur_iter % opt.freq_save_ckpt == 0 or
-                           cur_iter % opt.freq_save_latest == 0
-                           )
+    condition_run_stats = (
+            force_run_stats or
+            cur_iter % opt.freq_print == 0 or
+            cur_iter % opt.freq_fid == 0 or
+            cur_iter % opt.freq_save_ckpt == 0 or
+            cur_iter % opt.freq_save_latest == 0
+    )
     if condition_run_stats:
         with torch.no_grad():
-            num_upd = 0
-            for i, data_i in enumerate(dataloader):
-                image, label = models.preprocess_input(opt, data_i)
-                fake = model.module.netEMA(label)
-                num_upd += 1
+            for num_upd, data_i in enumerate(dataloader):
+                data = models.preprocess_input(opt, data_i)
+                model(**data, mode="generate", is_ema=True)
                 if num_upd > 50:
                     break
 
 
 def save_networks(opt, cur_iter, model, latest=False, best=False):
-    path = os.path.join(opt.checkpoints_dir, opt.name, "models")
-    os.makedirs(path, exist_ok=True)
+    path = opt.checkpoints_dir / opt.name / "models"
+    path.mkdir(exist_ok=True)
     if latest:
-        torch.save(model.module.netG.state_dict(), path + '/latest_G.pth')
-        torch.save(model.module.netD.state_dict(), path + '/latest_D.pth')
+        torch.save(model.module.netG.state_dict(), path / 'latest_G.pth')
+        torch.save(model.module.netD.state_dict(), path / 'latest_D.pth')
         if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path + '/latest_EMA.pth')
-        with open(os.path.join(opt.checkpoints_dir, opt.name) + "/latest_iter.txt", "w") as f:
-            f.write(str(cur_iter))
+            torch.save(model.module.netEMA.state_dict(), path / 'latest_EMA.pth')
+        file = opt.checkpoints_dir / opt.name / "latest_iter.txt"
+        file.write_text(str(cur_iter))
     elif best:
-        torch.save(model.module.netG.state_dict(), path + '/best_G.pth')
-        torch.save(model.module.netD.state_dict(), path + '/best_D.pth')
+        torch.save(model.module.netG.state_dict(), path / 'best_G.pth')
+        torch.save(model.module.netD.state_dict(), path / 'best_D.pth')
         if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path + '/best_EMA.pth')
-        with open(os.path.join(opt.checkpoints_dir, opt.name) + "/best_iter.txt", "w") as f:
-            f.write(str(cur_iter))
+            torch.save(model.module.netEMA.state_dict(), path / 'best_EMA.pth')
+        file = opt.checkpoints_dir / opt.name / "best_iter.txt"
+        file.write_text(str(cur_iter))
     else:
-        torch.save(model.module.netG.state_dict(), path + f'/{cur_iter}_G.pth')
-        torch.save(model.module.netD.state_dict(), path + f'/{cur_iter}_D.pth')
+        torch.save(model.module.netG.state_dict(), path / f'{cur_iter}_G.pth')
+        torch.save(model.module.netD.state_dict(), path / f'{cur_iter}_D.pth')
         if not opt.no_EMA:
-            torch.save(model.module.netEMA.state_dict(), path + f'/{cur_iter}_EMA.pth')
+            torch.save(model.module.netEMA.state_dict(), path / f'{cur_iter}_EMA.pth')
 
 
 class ImageSaver:
@@ -181,24 +223,22 @@ class ImageSaver:
         self.cols = 4
         self.rows = 3
         self.grid = 5
-        self.path = os.path.join(opt.checkpoints_dir, opt.name, "images") + "/"
+        self.path = opt.checkpoints_dir / opt.name / "images"
         self.opt = opt
         self.num_cl = opt.label_nc + 2
-        os.makedirs(self.path, exist_ok=True)
+        self.path.mkdir(exist_ok=True)
 
     def visualize_batch(self, model, image, label, cur_iter):
         self.save_images(label, "label", cur_iter, is_label=True)
         self.save_images(image, "real", cur_iter)
         with torch.no_grad():
             model.eval()
-            fake = model.module.netG(label)
+            fake = model(image, label, 'generate', is_ema=False)
             self.save_images(fake, "fake", cur_iter)
-            model.train()
             if not self.opt.no_EMA:
-                model.eval()
-                fake = model.module.netEMA(label)
+                fake = model(image, label, 'generate', is_ema=True)
                 self.save_images(fake, "fake_ema", cur_iter)
-                model.train()
+            model.train()
 
     def save_images(self, batch, name, cur_iter, is_label=False):
         fig = plt.figure()
@@ -214,6 +254,13 @@ class ImageSaver:
         fig.tight_layout()
         plt.savefig(self.path + str(cur_iter) + "_" + name)
         plt.close()
+
+
+def make_one_hot(labels, num_classes):
+    labels = labels[:, None]
+    one_hot = torch.zeros(labels.size(0), num_classes, labels.size(2), labels.size(3), device=labels.device)
+    target = one_hot.scatter_(1, labels.data, 1)
+    return target
 
 
 def tens_to_im(tens):
@@ -242,8 +289,8 @@ def uint82bin(n, count=8):
 def colorize(tens, num_cl):
     cmap = labelcolormap(num_cl)
     cmap = torch.from_numpy(cmap[:num_cl])
-    size = tens.size()
-    color_image = torch.ByteTensor(3, size[1], size[2]).fill_(0)
+    c, h, w = tens.shape
+    color_image = torch.zeros(3, h, w, dtype=torch.uint8)
     tens = torch.argmax(tens, dim=0, keepdim=True)
 
     for label in range(0, len(cmap)):

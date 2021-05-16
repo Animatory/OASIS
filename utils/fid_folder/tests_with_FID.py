@@ -38,19 +38,17 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 import numpy as np
 import torch
-from scipy import linalg
 from imageio import imread
-import imageio
-from torch.nn.functional import adaptive_avg_pool2d
+from scipy import linalg
 from skimage.transform import resize
-import matplotlib.pyplot as plt
-import numpy as np
+from torch.nn.functional import adaptive_avg_pool2d
 
 try:
     from tqdm import tqdm
 except ImportError:
     # If not tqdm is not available, provide a mock version of it
-    def tqdm(x): return x
+    def tqdm(x):
+        return x
 
 from util.fid_checks.inception import InceptionV3
 
@@ -66,6 +64,7 @@ parser.add_argument('--dims', type=int, default=2048,
                           'By default, uses pool3 features'))
 parser.add_argument('-c', '--gpu', default='', type=str,
                     help='GPU to use (leave blank for CPU only)')
+
 
 def get_activations(files, model, batch_size=50, dims=2048,
                     cuda=False, verbose=False):
@@ -109,7 +108,7 @@ def get_activations(files, model, batch_size=50, dims=2048,
         start = i * batch_size
         end = start + batch_size
         images = np.array([resize(imread(str(f)).astype(np.float32), (256, 256, 3))
-                          for f in files[start:end]])
+                           for f in files[start:end]])
 
         # Reshape to (n_images, 3, height, width)
         images = images.transpose((0, 3, 1, 2))
@@ -117,11 +116,11 @@ def get_activations(files, model, batch_size=50, dims=2048,
 
         batch = torch.from_numpy(images).type(torch.FloatTensor)
 
-        #import matplotlib.pyplot as plt
-        #import numpy
+        # import matplotlib.pyplot as plt
+        # import numpy
 
-        #plt.imshow(np.rollaxis(batch[0].detach().cpu().numpy(), 0, 3))
-        #plt.show()
+        # plt.imshow(np.rollaxis(batch[0].detach().cpu().numpy(), 0, 3))
+        # plt.show()
 
         if cuda:
             batch = batch.cuda()
@@ -222,9 +221,9 @@ def calculate_activation_statistics(files, model, batch_size=50,
     act = get_activations(files, model, batch_size, dims, cuda, verbose)
     mu = np.mean(act, axis=0)
     sigma = np.cov(act, rowvar=False)
-    #print(act.shape)
-    #rint(mu.shape)
-    #print(sigma.shape)
+    # print(act.shape)
+    # print(mu.shape)
+    # print(sigma.shape)
     return mu, sigma
 
 
@@ -264,8 +263,8 @@ def calculate_fid_given_paths(paths, batch_size, cuda, dims):
 
 
 if __name__ == '__main__':
-    #args = parser.parse_args()
-    #os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    # args = parser.parse_args()
+    # os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
     path1 = "./validation_data/"
     path2 = "./generated_data/"

@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -15,19 +12,23 @@ from utils.fid_folder.inception import InceptionV3
 # --------------------------------------------------------------------------#
 
 
-class fid_pytorch:
+class FIDCalculator:
     def __init__(self, opt, dataloader_val):
         self.opt = opt
         self.dims = 2048
         block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[self.dims]
         self.model_inc = InceptionV3([block_idx])
         if opt.gpu_ids != "-1":
-            self.model_inc.cuda()
+            gpus = list(map(int, opt.gpu_ids.split(",")))
+            self.device = torch.device(f'cuda:{gpus[0]}')
+            self.model_inc.to(self.device)
+        else:
+            self.device = torch.device('cpu')
         self.val_dataloader = dataloader_val
         self.m1, self.s1 = self.compute_statistics_of_val_path(dataloader_val)
         self.best_fid = 99999999
-        self.path_to_save = os.path.join(self.opt.checkpoints_dir, self.opt.name, "FID")
-        Path(self.path_to_save).mkdir(parents=True, exist_ok=True)
+        self.path_to_save = self.opt.checkpoints_dir / self.opt.name / "FID"
+        self.path_to_save.mkdir(parents=True, exist_ok=True)
 
     def compute_statistics_of_val_path(self, dataloader_val):
         print("--- Now computing Inception activations for real set ---")
@@ -43,39 +44,32 @@ class fid_pytorch:
             for i, data_i in enumerate(self.val_dataloader):
                 image = data_i["image"]
                 if self.opt.gpu_ids != "-1":
-                    image = image.cuda()
+                    image = image.to(self.device)
                 image = (image + 1) / 2
                 pool_val = self.model_inc(image.float())[0][:, :, 0, 0]
                 pool += [pool_val]
         return torch.cat(pool, 0)
 
-    def compute_fid_with_valid_path(self, netG, netEMA):
+    def compute_fid_with_valid_path(self, model):
         pool, logits, labels = [], [], []
         self.model_inc.eval()
-        netG.eval()
-        if not self.opt.no_EMA:
-            netEMA.eval()
+        model.eval()
         with torch.no_grad():
             for i, data_i in enumerate(self.val_dataloader):
-                image, label = models.preprocess_input(self.opt, data_i)
-                if self.opt.no_EMA:
-                    generated = netG(label)
-                else:
-                    generated = netEMA(label)
+                data = models.preprocess_input(self.opt, data_i)
+                generated = model(**data, mode='generate')
                 generated = (generated + 1) / 2
                 pool_val = self.model_inc(generated.float())[0][:, :, 0, 0]
                 pool += [pool_val]
             pool = torch.cat(pool, 0)
             mu, sigma = torch.mean(pool, 0), torch_cov(pool, rowvar=False)
             answer = numpy_calculate_frechet_distance(self.m1, self.s1, mu, sigma)
-        netG.train()
-        if not self.opt.no_EMA:
-            netEMA.train()
+        model.train()
         return answer
 
     def update(self, model, cur_iter):
         print(f"--- Iter {cur_iter}: computing FID ---")
-        cur_fid = self.compute_fid_with_valid_path(model.module.netG, model.module.netEMA)
+        cur_fid = self.compute_fid_with_valid_path(model)
         self.update_logs(cur_fid, cur_iter)
         print(f"--- FID at Iter {cur_iter}: {cur_fid:.2f}")
         if cur_fid < self.best_fid:
@@ -87,7 +81,7 @@ class fid_pytorch:
 
     def update_logs(self, cur_fid, epoch):
         try:
-            np_file = np.load(self.path_to_save + "/fid_log.npy")
+            np_file = np.load(self.path_to_save / "fid_log.npy")
             first = list(np_file[0, :])
             sercon = list(np_file[1, :])
             first.append(epoch)
@@ -96,7 +90,7 @@ class fid_pytorch:
         except:
             np_file = [[epoch], [cur_fid]]
 
-        np.save(self.path_to_save + "/fid_log.npy", np_file)
+        np.save(self.path_to_save / "fid_log.npy", np_file)
 
         np_file = np.array(np_file)
         plt.figure()
@@ -104,7 +98,7 @@ class fid_pytorch:
         plt.grid(b=True, which='major', color='#666666', linestyle='--')
         plt.minorticks_on()
         plt.grid(b=True, which='minor', color='#999999', linestyle='--', alpha=0.2)
-        plt.savefig(self.path_to_save + "/plot_fid", dpi=600)
+        plt.savefig(self.path_to_save / "plot_fid", dpi=600)
         plt.close()
 
 

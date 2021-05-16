@@ -1,6 +1,6 @@
 import argparse
-import os
 import pickle
+from pathlib import Path
 
 import utils.utils as utils
 
@@ -31,11 +31,11 @@ def add_all_arguments(parser, train):
                         help='name of the experiment. It decides where to store samples and models')
     parser.add_argument('--seed', type=int, default=42, help='random seed')
     parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-    parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
+    parser.add_argument('--checkpoints_dir', type=Path, default='./checkpoints', help='models are saved here')
     parser.add_argument('--no_spectral_norm', action='store_true',
                         help='this option deactivates spectral norm in all layers')
     parser.add_argument('--batch_size', type=int, default=1, help='input batch size')
-    parser.add_argument('--dataroot', type=str, default='./datasets/cityscapes/', help='path to dataset root')
+    parser.add_argument('--dataroot', type=Path, default='./datasets/cityscapes/', help='path to dataset root')
     parser.add_argument('--dataset_mode', type=str, default='coco',
                         help='this option indicates which dataset should be loaded')
     parser.add_argument('--no_flip', action='store_true',
@@ -71,7 +71,7 @@ def add_all_arguments(parser, train):
         parser.add_argument('--lr_d', type=float, default=0.0004, help='D learning rate, default=0.0004')
 
         parser.add_argument('--channels_D', type=int, default=64,
-                            help='# of discrim filters in first conv layer in discriminator')
+                            help='Number of filters in first conv layer in discriminator')
         parser.add_argument('--add_vgg_loss', action='store_true', help='if specified, add VGG feature matching loss')
         parser.add_argument('--lambda_vgg', type=float, default=10.0, help='weight for VGG loss')
         parser.add_argument('--no_balancing_inloss', action='store_true', default=False,
@@ -101,17 +101,15 @@ def set_dataset_default_lm(opt, parser):
 
 
 def save_options(opt, parser):
-    path_name = os.path.join(opt.checkpoints_dir, opt.name)
-    os.makedirs(path_name, exist_ok=True)
-    with open(path_name + '/opt.txt', 'wt') as opt_file:
+    path_name = opt.checkpoints_dir / opt.name
+    path_name.mkdir(exist_ok=True)
+    with open(path_name / 'opt.txt', 'wt') as opt_file:
         for k, v in sorted(vars(opt).items()):
-            comment = ''
             default = parser.get_default(k)
-            if v != default:
-                comment = '\t[default: %s]' % str(default)
-            opt_file.write('{:>25}: {:<30}{}\n'.format(str(k), str(v), comment))
+            comment = '' if v == default else f'\t[default: {default}]'
+            opt_file.write(f'{k:>25}: {str(v):<30}{comment}\n')
 
-    with open(path_name + '/opt.pkl', 'wb') as opt_file:
+    with open(path_name / 'opt.pkl', 'wb') as opt_file:
         pickle.dump(opt, opt_file)
 
 
@@ -125,20 +123,18 @@ def update_options_from_file(opt, parser):
 
 
 def load_options(opt):
-    file_name = os.path.join(opt.checkpoints_dir, opt.name, "opt.pkl")
+    file_name = opt.checkpoints_dir / opt.name / "opt.pkl"
     new_opt = pickle.load(open(file_name, 'rb'))
     return new_opt
 
 
 def load_iter(opt):
     if opt.which_iter == "latest":
-        with open(os.path.join(opt.checkpoints_dir, opt.name, "latest_iter.txt"), "r") as f:
-            res = int(f.read())
-            return res
+        file = opt.checkpoints_dir / opt.name / "latest_iter.txt"
+        return int(file.read_text())
     elif opt.which_iter == "best":
-        with open(os.path.join(opt.checkpoints_dir, opt.name, "best_iter.txt"), "r") as f:
-            res = int(f.read())
-            return res
+        file = opt.checkpoints_dir / opt.name / "best_iter.txt"
+        return int(file.read_text())
     else:
         return int(opt.which_iter)
 
@@ -147,10 +143,8 @@ def print_options(opt, parser):
     message = ''
     message += '----------------- Options ---------------\n'
     for k, v in sorted(vars(opt).items()):
-        comment = ''
         default = parser.get_default(k)
-        if v != default:
-            comment = f'\t[default: {default}]'
-        message += f'{k:>25}: {v:<30}{comment}\n'
+        comment = '' if v == default else f'\t[default: {default}]'
+        message += f'{k:>25}: {str(v):<30}{comment}\n'
     message += '----------------- End -------------------'
     print(message)
