@@ -2,6 +2,7 @@ checkpoints/
 tensorboard_logs/
 results/
 jobs/
+data/
 **/__pycache__/ 
 __pycache__/
 util/__pycache__/

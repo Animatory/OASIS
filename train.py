@@ -63,7 +63,7 @@ def run():
             model.zero_grad()
             loss_G, losses_G_list = model(**data, mode="losses_G", losses_computer=losses_computer)
             loss_G, losses_G_list = loss_G.mean(), [loss.mean() if loss is not None else None for loss in losses_G_list]
-            with amp.scale_loss(loss_G, optimizerD, loss_id=0, model=model) as loss_G_scaled:
+            with amp.scale_loss(loss_G, optimizerD, loss_id=0) as loss_G_scaled:
                 loss_G_scaled.backward()
             # loss_G.backward()
             optimizerG.step()
@@ -72,7 +72,7 @@ def run():
             model.zero_grad()
             loss_D, losses_D_list = model(**data, mode="losses_D", losses_computer=losses_computer)
             loss_D, losses_D_list = loss_D.mean(), [loss.mean() if loss is not None else None for loss in losses_D_list]
-            with amp.scale_loss(loss_D, optimizerD, loss_id=1, model=model) as loss_D_scaled:
+            with amp.scale_loss(loss_D, optimizerD, loss_id=1) as loss_D_scaled:
                 loss_D_scaled.backward()
             # loss_D.backward()
             optimizerD.step()
