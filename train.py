@@ -75,23 +75,24 @@ def run():
             with amp.scale_loss(loss_D, optimizerD, loss_id=1, model=model) as loss_D_scaled:
                 loss_D_scaled.backward()
             # loss_D.backward()
-            # optimizerD.step()
+            optimizerD.step()
             t.set_description_str(f'G loss: {loss_G:.4f}, D loss: {loss_D:.4f}', refresh=False)
 
             # --- stats update ---#
             if not opt.no_EMA:
                 model.update_ema(cur_iter, dataloader, opt)
-            if cur_iter % opt.freq_print == 0:
-                im_saver.visualize_batch(model, data['image'], data['label'], cur_iter)
-                timer(epoch, cur_iter)
-            if cur_iter % opt.freq_save_ckpt == 0:
-                model.save_networks(cur_iter)
-            if cur_iter % opt.freq_save_latest == 0:
-                model.save_networks(cur_iter, latest=True)
-            if cur_iter % opt.freq_fid == 0 and cur_iter > 0:
-                is_best = fid_computer.update(model, cur_iter)
-                if is_best:
-                    model.save_networks(cur_iter, best=True)
+            if cur_iter > 0:
+                if cur_iter % opt.freq_print == 0:
+                    im_saver.visualize_batch(model, data['image'], data['label'], cur_iter)
+                    timer(epoch, cur_iter)
+                if cur_iter % opt.freq_save_ckpt == 0:
+                    model.save_networks(cur_iter)
+                if cur_iter % opt.freq_save_latest == 0:
+                    model.save_networks(cur_iter, latest=True)
+                if cur_iter % opt.freq_fid == 0:
+                    is_best = fid_computer.update(model, cur_iter)
+                    if is_best:
+                        model.save_networks(cur_iter, best=True)
             visualizer_losses(cur_iter, losses_G_list + losses_D_list)
 
     # --- after training ---#

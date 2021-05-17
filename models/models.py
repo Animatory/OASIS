@@ -172,7 +172,7 @@ def put_on_multi_gpus(model, opt):
 
 
 def preprocess_input(opt, data):
-    dtype = torch.half
+    dtype = torch.float16
     # dtype = torch.float32
     if opt.gpu_ids != "-1":
         gpus = list(map(int, opt.gpu_ids.split(",")))
