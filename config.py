@@ -54,6 +54,8 @@ def add_all_arguments(parser, train):
                         help='if specified, do *not* concatenate noise to label maps')
     parser.add_argument('--z_dim', type=int, default=64, help="dimension of the latent z vector")
 
+    parser.add_argument('--discriminator', type=str, default='hrnet_w18', help="Type of discriminator")
+
     if train:
         parser.add_argument('--freq_print', type=int, default=1000, help='frequency of showing training results')
         parser.add_argument('--freq_save_ckpt', type=int, default=20000, help='frequency of saving the checkpoints')

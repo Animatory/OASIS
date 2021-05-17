@@ -3,7 +3,8 @@ import copy
 import torch
 import torch.nn as nn
 
-from . import OASIS_Generator, OASIS_Discriminator, DataParallelWithCallback, VGGLoss
+from registry import DISCRIMINATORS
+from . import OASIS_Generator, DataParallelWithCallback, VGGLoss
 
 
 class OASIS(nn.Module):
@@ -12,7 +13,7 @@ class OASIS(nn.Module):
         self.opt = opt
         # --- generator and discriminator ---
         self.netG = OASIS_Generator(opt)
-        self.netD = OASIS_Discriminator(opt)
+        self.netD = DISCRIMINATORS[opt.discriminator](opt=opt)
         self.print_parameter_count()
         # --- EMA of generator weights ---
         if not self.opt.no_EMA:
@@ -60,7 +61,10 @@ class OASIS(nn.Module):
 
         if mode == "generate":
             with torch.no_grad():
-                is_ema = is_ema and not self.opt.no_EMA
+                if is_ema is None:
+                    is_ema = not self.opt.no_EMA
+                else:
+                    is_ema = is_ema and not self.opt.no_EMA
                 model = self.netEMA if is_ema else self.netG
                 fake = model(label, noise=noise)
             return fake
@@ -172,8 +176,10 @@ def put_on_multi_gpus(model, opt):
 
 
 def preprocess_input(opt, data):
-    dtype = torch.float16
-    # dtype = torch.float32
+    if opt.opt_level == 'O0':
+        dtype = torch.float32
+    else:
+        dtype = torch.float16
     if opt.gpu_ids != "-1":
         gpus = list(map(int, opt.gpu_ids.split(",")))
         data['label'] = data['label'].cuda(gpus[0])

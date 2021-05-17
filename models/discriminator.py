@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 
+from registry import DISCRIMINATORS
 import models.norms as norms
 
 
+@DISCRIMINATORS.register_model
 class OASIS_Discriminator(nn.Module):
     def __init__(self, opt):
         super().__init__()
@@ -22,9 +24,9 @@ class OASIS_Discriminator(nn.Module):
         for i in range(1, opt.num_res_blocks - 1):
             self.body_up.append(DiscriminatorResidualBlock(2 * self.channels[-1 - i], self.channels[-2 - i],
                                                            sp_norm, 1))
-        self.body_up.append(DiscriminatorResidualBlock(fin=2 * self.channels[1], fout=self.channels[1],
+        self.body_up.append(DiscriminatorResidualBlock(fin=2 * self.channels[1], fout=64,
                                                        norm_layer=sp_norm, up_or_down=1))
-        self.layer_up_last = nn.Conv2d(self.channels[1], output_channel, 1, 1, 0)
+        self.layer_up_last = nn.Conv2d(64, output_channel, 1, 1, 0)
 
         self.init_weights()
 

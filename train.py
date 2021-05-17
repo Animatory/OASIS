@@ -12,8 +12,6 @@ from utils.fid_scores import FIDCalculator
 
 def run():
     torch.multiprocessing.freeze_support()
-    print('loop')
-    torch.multiprocessing.freeze_support()
 
     # --- read options ---#
     opt = config.read_arguments(train=True)
@@ -60,7 +58,7 @@ def run():
             data = models.preprocess_input(opt, data_i)
 
             # --- generator update ---#
-            model.zero_grad()
+            model.netG.zero_grad()
             loss_G, losses_G_list = model(**data, mode="losses_G", losses_computer=losses_computer)
             loss_G, losses_G_list = loss_G.mean(), [loss.mean() if loss is not None else None for loss in losses_G_list]
             with amp.scale_loss(loss_G, optimizerD, loss_id=0) as loss_G_scaled:
@@ -69,7 +67,7 @@ def run():
             optimizerG.step()
 
             # --- discriminator update ---#
-            model.zero_grad()
+            model.netD.zero_grad()
             loss_D, losses_D_list = model(**data, mode="losses_D", losses_computer=losses_computer)
             loss_D, losses_D_list = loss_D.mean(), [loss.mean() if loss is not None else None for loss in losses_D_list]
             with amp.scale_loss(loss_D, optimizerD, loss_id=1) as loss_D_scaled:
