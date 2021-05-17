@@ -172,10 +172,12 @@ def put_on_multi_gpus(model, opt):
 
 
 def preprocess_input(opt, data):
+    dtype = torch.half
+    # dtype = torch.float32
     if opt.gpu_ids != "-1":
         gpus = list(map(int, opt.gpu_ids.split(",")))
         data['label'] = data['label'].cuda(gpus[0])
-        data['image'] = data['image'].half().cuda(gpus[0])
+        data['image'] = data['image'].to(dtype).cuda(gpus[0])
         if 'image_unsup' in data:
             data['image_unsup'] = data['image_unsup'].half().cuda(gpus[0])
 

@@ -24,11 +24,13 @@ def run():
     losses_computer = losses.LossesComputer(opt)
     dataloader, dataloader_val = dataloaders.get_dataloaders(opt)
     im_saver = utils.ImageSaver(opt)
-    # fid_computer = FIDCalculator(opt, dataloader_val)
+    fid_computer = FIDCalculator(opt, dataloader_val)
 
     # --- create models ---#
     model = models.OASIS(opt)
-    model = models.put_on_multi_gpus(model, opt)
+    if opt.gpu_ids != "-1":
+        gpus = list(map(int, opt.gpu_ids.split(",")))
+        model.to(gpus[0])
 
     # --- create optimizers ---#
     G_params = list(model.netG.parameters())
@@ -38,9 +40,12 @@ def run():
     optimizerD = torch.optim.Adam(D_params, lr=opt.lr_d, betas=(opt.beta1, opt.beta2))
 
     [model], [optimizerD, optimizerG] = amp.initialize(
-        [model], [optimizerD, optimizerG], opt_level=opt.opt_level, num_losses=5)
+        [model], [optimizerD, optimizerG], loss_scale=1,
+        opt_level=opt.opt_level, num_losses=2)
     optimizerD._lazy_init_maybe_master_weights()
     optimizerG._lazy_init_maybe_master_weights()
+
+    model = models.put_on_multi_gpus(model, opt)
 
     # --- the training loop ---#
     already_started = False
@@ -54,11 +59,11 @@ def run():
             cur_iter = epoch * len(dataloader) + i
             data = models.preprocess_input(opt, data_i)
 
-            #     --- generator update ---#
+            # --- generator update ---#
             model.zero_grad()
             loss_G, losses_G_list = model(**data, mode="losses_G", losses_computer=losses_computer)
             loss_G, losses_G_list = loss_G.mean(), [loss.mean() if loss is not None else None for loss in losses_G_list]
-            with amp.scale_loss(loss_G, optimizerD, loss_id=0) as loss_G_scaled:
+            with amp.scale_loss(loss_G, optimizerD, loss_id=0, model=model) as loss_G_scaled:
                 loss_G_scaled.backward()
             # loss_G.backward()
             optimizerG.step()
@@ -67,7 +72,7 @@ def run():
             model.zero_grad()
             loss_D, losses_D_list = model(**data, mode="losses_D", losses_computer=losses_computer)
             loss_D, losses_D_list = loss_D.mean(), [loss.mean() if loss is not None else None for loss in losses_D_list]
-            with amp.scale_loss(loss_D, optimizerD, loss_id=0) as loss_D_scaled:
+            with amp.scale_loss(loss_D, optimizerD, loss_id=1, model=model) as loss_D_scaled:
                 loss_D_scaled.backward()
             # loss_D.backward()
             # optimizerD.step()
@@ -83,19 +88,19 @@ def run():
                 model.save_networks(cur_iter)
             if cur_iter % opt.freq_save_latest == 0:
                 model.save_networks(cur_iter, latest=True)
-            # if cur_iter % opt.freq_fid == 0 and cur_iter > 0:
-            #     is_best = fid_computer.update(model, cur_iter)
-            #     if is_best:
-            #         model.save_networks(cur_iter, best=True)
+            if cur_iter % opt.freq_fid == 0 and cur_iter > 0:
+                is_best = fid_computer.update(model, cur_iter)
+                if is_best:
+                    model.save_networks(cur_iter, best=True)
             visualizer_losses(cur_iter, losses_G_list + losses_D_list)
 
     # --- after training ---#
     model.update_ema(cur_iter, dataloader, opt, force_run_stats=True)
     model.save_networks(cur_iter)
     model.save_networks(cur_iter, latest=True)
-    # is_best = fid_computer.update(model, cur_iter)
-    # if is_best:
-    #     model.save_networks(cur_iter, best=True)
+    is_best = fid_computer.update(model, cur_iter)
+    if is_best:
+        model.save_networks(cur_iter, best=True)
 
     print("The training has successfully finished")
 

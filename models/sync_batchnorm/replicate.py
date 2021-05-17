@@ -66,8 +66,23 @@ class DataParallelWithCallback(DataParallel):
         execute_replication_callbacks(modules)
         return modules
 
-    def __getattr__(self, item):
-        return getattr(self.module, item)
+    @property
+    def netG(self):
+        return self.module.netG
+
+    @property
+    def netD(self):
+        return self.module.netD
+
+    @property
+    def netEMA(self):
+        return self.module.netEMA
+
+    def save_networks(self, *args, **kwargs):
+        return self.module.save_networks(*args, **kwargs)
+
+    def update_ema(self, *args, **kwargs):
+        return self.module.update_ema(*args, **kwargs)
 
 
 def patch_replication_callback(data_parallel):
