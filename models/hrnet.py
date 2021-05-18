@@ -994,16 +994,15 @@ class HighResolutionNet(nn.Module):
         seg = self.head([orig_x] + yl)
         # features = self.head_features([orig_x] + yl)
 
-        # y = self.incre_modules[0](yl[0])
-        # for i in range(len(self.downsamp_modules)):
-        #     y = self.downsamp_modules[i](y)
-        #     if i + 1 < len(yl):
-        #         y = self.incre_modules[i + 1](yl[i + 1])
-        # features = self.final_layer(y)
-        # features = self.feature_linear(features.mean((2, 3)))
+        y = self.incre_modules[0](yl[0])
+        for i in range(len(self.downsamp_modules)):
+            y = self.downsamp_modules[i](y)
+            if i + 1 < len(yl):
+                y = self.incre_modules[i + 1](yl[i + 1])
+        features = self.final_layer(y)
+        features = self.feature_linear(features.mean((2, 3)))
 
-        # return seg, features
-        return seg
+        return seg, features
 
 
 def _create_hrnet(variant, pretrained, **model_kwargs):

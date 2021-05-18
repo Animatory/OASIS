@@ -28,6 +28,9 @@ class Ade20kDataset(torch.utils.data.Dataset):
         self.opt = opt
         self.for_metrics = for_metrics
         self.images, self.labels = self.list_images()
+        self.has_unsup_images = not (self.opt.unsup_dir is None or self.opt.phase == "test" or self.for_metrics)
+        if self.has_unsup_images:
+            self.unsup_images = sorted(Path(self.opt.unsup_dir).glob('**/*'))
 
         transforms_list = []
         if not (self.opt.phase == "test" or self.for_metrics):
@@ -58,6 +61,11 @@ class Ade20kDataset(torch.utils.data.Dataset):
             image = cv2.resize(image, label.shape[::-1])
         data = self.transforms(image=image, mask=label)
         sample = {"image": data['image'], "label": data['mask'].long(), "name": self.images[idx].name}
+
+        if self.has_unsup_images:
+            path = random.choice(self.unsup_images)
+            image_unsup = np.array(Image.open(path).convert('RGB'))
+            sample['image_unsup'] = self.transforms(image=image_unsup)['image']
         return sample
 
     def list_images(self):

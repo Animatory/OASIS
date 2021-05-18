@@ -36,6 +36,7 @@ def add_all_arguments(parser, train):
                         help='this option deactivates spectral norm in all layers')
     parser.add_argument('--batch_size', type=int, default=1, help='input batch size')
     parser.add_argument('--dataroot', type=Path, default='./datasets/cityscapes/', help='path to dataset root')
+    parser.add_argument('--unsup_dir', type=Path, default=None, help='Path to directory with unlabeled images')
     parser.add_argument('--dataset_mode', type=str, default='coco',
                         help='this option indicates which dataset should be loaded')
     parser.add_argument('--no_flip', action='store_true',

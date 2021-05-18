@@ -28,6 +28,20 @@ class LossesComputer:
         mixed_D_output = mask * output_D_real + (1 - mask) * output_D_fake
         return self.labelmix_function(mixed_D_output, output_D_mixed)
 
+    def loss_ae(self, input, target):
+        return F.mse_loss(input, target)
+
+    def loss_features(self, input: torch.Tensor):
+        mean, log_var = torch.chunk(input, 2, dim=1)
+        kld_loss = -0.5 * torch.mean(torch.sum(1 + log_var - mean ** 2 - log_var.exp(), dim=1))
+        return kld_loss * 0.1
+
+    def loss_unsup(self, input):
+        input = torch.softmax(input, 1)[:, 0]
+        target = torch.zeros_like(input, requires_grad=False)
+        loss = F.binary_cross_entropy(input, target)
+        return loss
+
 
 def get_class_balancing(opt, label):
     nc = label.shape[1]
