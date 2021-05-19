@@ -42,11 +42,9 @@ class FIDCalculator:
         self.model_inc.eval()
         with torch.no_grad():
             for i, data_i in enumerate(self.val_dataloader):
-                image = data_i["image"]
-                if self.opt.gpu_ids != "-1":
-                    image = image.to(self.device)
+                image = data_i["image"].to(self.device)
                 image = (image + 1) / 2
-                pool_val = self.model_inc(image.float())[0][:, :, 0, 0]
+                pool_val = self.model_inc(image.float())[0][:, :, 0, 0].cpu()
                 pool += [pool_val]
         return torch.cat(pool, 0)
 
@@ -59,7 +57,7 @@ class FIDCalculator:
                 data = models.preprocess_input(self.opt, data_i)
                 generated = model(**data, mode='generate')
                 generated = (generated + 1) / 2
-                pool_val = self.model_inc(generated.float())[0][:, :, 0, 0]
+                pool_val = self.model_inc(generated.float())[0][:, :, 0, 0].cpu()
                 pool += [pool_val]
             pool = torch.cat(pool, 0)
             mu, sigma = torch.mean(pool, 0), torch_cov(pool, rowvar=False)

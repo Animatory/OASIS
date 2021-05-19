@@ -1,6 +1,7 @@
 import argparse
 import pickle
 from pathlib import Path
+import os
 
 import utils.utils as utils
 
@@ -15,6 +16,11 @@ def read_arguments(train=True):
         if opt.continue_train:
             update_options_from_file(opt, parser)
     opt = parser.parse_args()
+    if opt.gpu_ids != "-1":
+        os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpu_ids
+        gpus = list(map(int, opt.gpu_ids.split(",")))
+        opt.gpu_ids = ','.join(map(str, range(len(gpus))))
+
     opt.phase = 'train' if train else 'test'
     if train:
         opt.loaded_latest_iter = 0 if not opt.continue_train else load_iter(opt)
