@@ -12,7 +12,7 @@ class OASIS_Generator(nn.Module):
         sp_norm = norms.get_spectral_norm(opt)
         ch = opt.channels_G
         self.channels = [16 * ch, 16 * ch, 16 * ch, 8 * ch, 4 * ch, 2 * ch, 1 * ch]
-        self.init_w = opt.crop_size // (2 ** (opt.num_res_blocks - 1))
+        self.init_w = opt.image_size // (2 ** (opt.num_res_blocks - 1))
         self.init_h = round(self.init_w / opt.aspect_ratio)
         self.conv_img = nn.Conv2d(self.channels[-1], 3, 3, padding=1)
 
@@ -26,30 +26,30 @@ class OASIS_Generator(nn.Module):
 
         self.init_weights()
 
-    def forward(self, segm, noise=None, zero_noise=False):
-        b, c, h, w = segm.shape
-        zeros = torch.zeros(b, self.opt.z_dim, dtype=segm.dtype,
-                            device=segm.device, requires_grad=False)
+    def forward(self, labels, features=None, zero_noise=False):
+        b, c, h, w = labels.shape
+        zeros = torch.zeros(b, self.opt.z_dim, dtype=labels.dtype,
+                            device=labels.device, requires_grad=False)
         if zero_noise:
-            noise = zeros
+            features = zeros
         else:
-            if noise is None:
+            if features is None:
                 log_var = zeros
                 mu = zeros
             else:
-                mu, log_var = torch.chunk(noise, 2, dim=1)
+                mu, log_var = torch.chunk(features, 2, dim=1)
             std = torch.exp(0.5 * log_var)
-            noise = torch.randn_like(std)
-            noise = noise * std + mu
+            features = torch.randn_like(std)
+            features = features * std + mu
 
-        if noise.ndim == 2:
-            noise = noise[:, :, None, None].expand(b, self.opt.z_dim, h, w)
+        if features.ndim == 2:
+            features = features[:, :, None, None].expand(b, self.opt.z_dim, h, w)
 
-        segm = torch.cat((noise, segm), dim=1)
-        x = F.interpolate(segm, size=(self.init_w, self.init_h))
+        labels = torch.cat((features, labels), dim=1)
+        x = F.interpolate(labels, size=(self.init_w, self.init_h), mode='bilinear', align_corners=True)
         x = self.fc(x)
         for i in range(self.opt.num_res_blocks):
-            x = self.body[i](x, segm)
+            x = self.body[i](x, labels)
             if i < self.opt.num_res_blocks - 1:
                 x = self.up(x)
         x = self.conv_img(F.leaky_relu(x, 2e-1))
@@ -71,7 +71,7 @@ class OASIS_Generator(nn.Module):
 
 
 class ResnetBlock_with_SPADE(nn.Module):
-    def __init__(self, fin, fout, opt):
+    def __init__(self, fin, fout, opt, z_dim=None):
         super().__init__()
         self.opt = opt
         self.learned_shortcut = (fin != fout)
@@ -84,7 +84,7 @@ class ResnetBlock_with_SPADE(nn.Module):
 
         spade_conditional_input_dims = opt.semantic_nc
         if not opt.no_3dnoise:
-            spade_conditional_input_dims += opt.z_dim
+            spade_conditional_input_dims += opt.z_dim if z_dim is None else z_dim
 
         self.norm_0 = norms.SPADE(opt, fin, spade_conditional_input_dims)
         self.norm_1 = norms.SPADE(opt, fmiddle, spade_conditional_input_dims)

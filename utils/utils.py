@@ -2,6 +2,7 @@ import os
 import random
 import time
 from pathlib import Path
+from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -182,26 +183,25 @@ class ImageSaver:
         # self.save_images(label, "label", cur_iter, is_label=True)
         # self.save_images(image, "real", cur_iter)
         with torch.no_grad():
-            names = ['Original Image', 'Original mask', 'Generated from original mask with features',
-                     'Generated from soft mask, random noise', 'Predicted mask',
-                     'Generated from predicted mask', 'Generated from predicted soft mask',
-                     'Generated from original mask with noise']
             bs = image.shape[0]
             model.eval()
             data = self.get_predictions(model, image, label, is_ema=False)
             new_data = []
+            names = []
             for i in range(bs):
-                for j in range(len(names)):
-                    new_data.append(data[j][i])
-            plot_images(new_data, names=names * bs, ncols=4, figsize=(24, 10 * bs), show=False,
+                for name, tensor in data:
+                    new_data.append(tensor[i])
+                    names.append(name)
+            plot_images(new_data, names=names, ncols=4, figsize=(24, 10 * bs), show=False,
                         title=self.path / f"{cur_iter}_images")
             if not self.opt.no_EMA:
                 data = self.get_predictions(model, image, label, is_ema=True)
                 new_data = []
                 for i in range(bs):
-                    for j in range(len(names)):
-                        new_data.append(data[j][i])
-                plot_images(new_data, names=names * bs, ncols=4, figsize=(24, 10 * bs), show=False,
+                    for name, tensor in data:
+                        new_data.append(tensor[i])
+                        names.append(name)
+                plot_images(new_data, names=names, ncols=4, figsize=(24, 10 * bs), show=False,
                             title=self.path / f"{cur_iter}_images_ema")
             model.train()
 
@@ -211,21 +211,36 @@ class ImageSaver:
             pred_labels, pred_features = model(images, labels, 'predict', is_ema=is_ema)
             num_classes = pred_labels.shape[1]
             pred_labels_am = pred_labels.argmax(1)
-            gen_pred_am = model(images, make_one_hot(pred_labels_am, num_classes),
-                                'generate', is_ema=is_ema, noise=pred_features)
-            gen_pred_sm = model(images, torch.softmax(pred_labels, 1),
-                                'generate', is_ema=is_ema, noise=pred_features)
 
-            gen_pred_am = tens_to_im(gen_pred_am)
-            gen_pred_sm = tens_to_im(gen_pred_sm)
             gen_gt_features = tens_to_im(model(images, labels, 'generate', is_ema=is_ema, noise=pred_features))
-            gen_pred_rand_noise = tens_to_im(model(images, torch.softmax(pred_labels, 1), 'generate', is_ema=is_ema))
-            gen_gt_random_noise = tens_to_im(model(images, labels, 'generate', is_ema=is_ema))
+            gen_gt_noise = tens_to_im(model(images, labels, 'generate', is_ema=is_ema))
+            # gen_nomask_features = tens_to_im(model(mode='generate', is_ema=is_ema, noise=pred_features))
+
+            gen_pred_am = tens_to_im(model(label=make_one_hot(pred_labels_am, num_classes),
+                                           mode='generate', is_ema=is_ema, noise=pred_features))
+            gen_pred_sm = tens_to_im(model(label=torch.softmax(pred_labels, 1),
+                                           mode='generate', is_ema=is_ema, noise=pred_features))
+
+            gen_pred_noise = tens_to_im(model(images, torch.softmax(pred_labels, 1), 'generate', is_ema=is_ema))
             images = tens_to_im(images)
             labels = [tens_to_lab(label, num_classes) for label in labels]
             pred_labels_am = [tens_to_lab(pred_label, num_classes) for pred_label in pred_labels]
-        return images, labels, gen_gt_features, gen_pred_rand_noise, pred_labels_am, \
-               gen_pred_am, gen_pred_sm, gen_gt_random_noise
+
+            data = (
+                ('Image', images),
+                ('Mask', labels),
+                ('Predicted mask', pred_labels_am),
+
+                ('Generated, original mask, features', gen_gt_features),
+                ('Generated, original mask, noise', gen_gt_noise),
+                # ('Generated, no mask, features', gen_nomask_features),
+
+                ('Generated, hard mask, features', gen_pred_am),
+                ('Generated, soft mask, noise', gen_pred_noise),
+                ('Generated, soft mask, features', gen_pred_sm),
+            )
+
+        return data
 
     def save_images(self, batch, name, cur_iter, is_label=False):
         fig = plt.figure()

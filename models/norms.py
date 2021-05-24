@@ -22,7 +22,7 @@ class SPADE(nn.Module):
 
     def forward(self, x, segmap):
         normalized = self.first_norm(x)
-        segmap = F.interpolate(segmap, size=x.size()[2:], mode='nearest')
+        segmap = F.interpolate(segmap, size=x.size()[2:], mode='bilinear', align_corners=True)
         actv = self.mlp_shared(segmap)
         gamma = self.mlp_gamma(actv)
         beta = self.mlp_beta(actv)

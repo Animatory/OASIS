@@ -1002,7 +1002,7 @@ class HighResolutionNet(nn.Module):
         features = self.final_layer(y)
         features = self.feature_linear(features.mean((2, 3)))
 
-        return seg, features
+        return features, seg
 
 
 def _create_hrnet(variant, pretrained, **model_kwargs):

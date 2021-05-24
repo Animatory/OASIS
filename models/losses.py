@@ -24,6 +24,20 @@ class LossesComputer:
             loss = F.cross_entropy(input, target)
         return loss
 
+    def loss_segm(self, input, label, for_real):
+        if for_real:
+            # --- balancing classes ---
+            loss = F.softplus(input[:, 0]).mean()
+            pred_labels = input[:, 1:]
+            weights = get_class_balancing(self.opt, label)
+            target = torch.argmax(label, dim=1)
+
+            loss += F.cross_entropy(pred_labels, target, weight=weights[1:],
+                                    ignore_index=0 if self.opt.contain_dontcare_label else -100)
+        else:
+            loss = F.softplus(-input[:, 0]).mean()
+        return loss
+
     def loss_labelmix(self, mask, output_D_mixed, output_D_fake, output_D_real):
         mixed_D_output = mask * output_D_real + (1 - mask) * output_D_fake
         return self.labelmix_function(mixed_D_output, output_D_mixed)

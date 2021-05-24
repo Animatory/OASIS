@@ -41,6 +41,7 @@ def add_all_arguments(parser, train):
     parser.add_argument('--no_spectral_norm', action='store_true',
                         help='this option deactivates spectral norm in all layers')
     parser.add_argument('--batch_size', type=int, default=1, help='input batch size')
+    parser.add_argument('--image_size', type=int, default=256, help='Image size')
     parser.add_argument('--dataroot', type=Path, default='./datasets/cityscapes/', help='path to dataset root')
     parser.add_argument('--unsup_dir', type=Path, default=None, help='Path to directory with unlabeled images')
     parser.add_argument('--dataset_mode', type=str, default='coco',
@@ -48,9 +49,9 @@ def add_all_arguments(parser, train):
     parser.add_argument('--no_flip', action='store_true',
                         help='if specified, do not flip the images for data argumentation')
 
-    # for generator
     parser.add_argument('--num_res_blocks', type=int, default=6, help='number of residual blocks in G and D')
-    parser.add_argument('--channels_G', type=int, default=64, help='# of gen filters in first conv layer in generator')
+    parser.add_argument('--channels_G', type=int, default=64, help='Multiplier for Generator channels')
+    parser.add_argument('--channels_D', type=int, default=64, help='Multiplier for Discriminator channels')
     parser.add_argument('--param_free_norm', type=str, default='syncbatch',
                         help='which norm to use in generator before SPADE')
     parser.add_argument('--spade_ks', type=int, default=3, help='kernel size of convs inside SPADE')
@@ -59,7 +60,7 @@ def add_all_arguments(parser, train):
     parser.add_argument('--EMA_decay', type=float, default=0.9999, help='decay in exponential moving averages')
     parser.add_argument('--no_3dnoise', action='store_true', default=False,
                         help='if specified, do *not* concatenate noise to label maps')
-    parser.add_argument('--z_dim', type=int, default=64, help="dimension of the latent z vector")
+    parser.add_argument('--z_dim', type=int, default=128, help="dimension of the latent z vector")
 
     parser.add_argument('--discriminator', type=str, default='hrnet_w18', help="Type of discriminator")
 
@@ -80,9 +81,6 @@ def add_all_arguments(parser, train):
         parser.add_argument('--lr_d', type=float, default=0.0004, help='D learning rate, default=0.0004')
         parser.add_argument('--opt_level', type=str, default='O0',
                             help='opt level for mixed precision training, default=0.0004')
-
-        parser.add_argument('--channels_D', type=int, default=64,
-                            help='Number of filters in first conv layer in discriminator')
         parser.add_argument('--add_vgg_loss', action='store_true', help='if specified, add VGG feature matching loss')
         parser.add_argument('--lambda_vgg', type=float, default=10.0, help='weight for VGG loss')
         parser.add_argument('--no_balancing_inloss', action='store_true', default=False,

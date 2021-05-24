@@ -5,9 +5,10 @@ from tqdm import tqdm
 import config
 import dataloaders.dataloaders as dataloaders
 import models.losses as losses
-import models.models as models
+import models.models_fast as models
 import utils.utils as utils
 from utils.fid_scores import FIDCalculator
+from trainer import Trainer
 
 
 def run():
@@ -45,6 +46,8 @@ def run():
 
     model = models.put_on_multi_gpus(model, opt)
 
+    trainer = Trainer(opt, model, optimizerD, optimizerG, losses_computer, visualizer_losses)
+
     # --- the training loop ---#
     already_started = False
     start_epoch, start_iter = utils.get_start_iters(opt.loaded_latest_iter, len(dataloader))
@@ -57,24 +60,8 @@ def run():
             cur_iter = epoch * len(dataloader) + i
             data = models.preprocess_input(opt, data_i)
 
-            # --- generator update ---#
-            model.netG.zero_grad()
-            loss_G, losses_G_list = model(**data, mode="losses_G", losses_computer=losses_computer)
-            loss_G, losses_G_list = loss_G.mean(), [loss.mean() if loss is not None else None for loss in losses_G_list]
-            with amp.scale_loss(loss_G, optimizerD, loss_id=0) as loss_G_scaled:
-                loss_G_scaled.backward()
-            # loss_G.backward()
-            optimizerG.step()
-
-            # --- discriminator update ---#
-            model.netD.zero_grad()
-            loss_D, losses_D_list = model(**data, mode="losses_D", losses_computer=losses_computer)
-            loss_D, losses_D_list = loss_D.mean(), [loss.mean() if loss is not None else None for loss in losses_D_list]
-            with amp.scale_loss(loss_D, optimizerD, loss_id=1) as loss_D_scaled:
-                loss_D_scaled.backward()
-            # loss_D.backward()
-            optimizerD.step()
-            t.set_description_str(f'G loss: {loss_G:.4f}, D loss: {loss_D:.4f}', refresh=False)
+            loss_d, loss_g = trainer.train_step_fast_gan(data, cur_iter)
+            t.set_description_str(f'G loss: {loss_g:.4f}, D loss: {loss_d:.4f}', refresh=False)
 
             # --- stats update ---#
             if not opt.no_EMA:
@@ -91,7 +78,6 @@ def run():
                     is_best = fid_computer.update(model, cur_iter)
                     if is_best:
                         model.save_networks(cur_iter, best=True)
-            visualizer_losses(cur_iter, losses_G_list + losses_D_list)
 
     # --- after training ---#
     model.update_ema(cur_iter, dataloader, opt, force_run_stats=True)

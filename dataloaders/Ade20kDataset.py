@@ -12,12 +12,6 @@ from albumentations.pytorch import ToTensorV2
 
 class Ade20kDataset(torch.utils.data.Dataset):
     def __init__(self, opt, for_metrics):
-        if opt.phase == "test" or for_metrics:
-            opt.load_size = 256
-        else:
-            opt.load_size = 286
-
-        opt.crop_size = 256
         opt.label_nc = 150
         opt.contain_dontcare_label = True
         opt.semantic_nc = 151  # label_nc + unknown
@@ -36,13 +30,13 @@ class Ade20kDataset(torch.utils.data.Dataset):
         if not (self.opt.phase == "test" or self.for_metrics):
             transforms_list.extend([
                 HorizontalFlip(),
-                RandomResizedCrop(opt.crop_size, opt.crop_size, scale=(0.6, 1.), ratio=(0.9, 1 / 0.9)),
+                RandomResizedCrop(opt.image_size, opt.image_size, scale=(0.6, 1.), ratio=(0.9, 1 / 0.9)),
                 ShiftScaleRotate(rotate_limit=10),
             ])
         else:
             transforms_list.extend([
-                SmallestMaxSize(opt.crop_size),
-                CenterCrop(opt.crop_size, opt.crop_size)
+                SmallestMaxSize(opt.image_size),
+                CenterCrop(opt.image_size, opt.image_size)
             ])
         transforms_list.extend([
             Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
