@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from torch.hub import load_state_dict_from_url
 
 from registry import DISCRIMINATORS
+from .models_fast import StyleVectorizer
 
 # BatchNorm2d = torch.nn.SyncBatchNorm
 BatchNorm2d = torch.nn.BatchNorm2d
@@ -846,7 +847,9 @@ class HighResolutionNet(nn.Module):
         self.num_features = 2048
         self.incre_modules, self.downsamp_modules, self.final_layer = self._make_neck(pre_stage_channels)
         self.pool = nn.AdaptiveAvgPool2d(1)
-        self.feature_linear = nn.Linear(self.num_features, self.opt.z_dim * 2)
+        # self.feature_linear = nn.Linear(self.num_features, self.opt.z_dim * 2)
+        self.feature_mapper = nn.Linear(self.num_features, self.opt.z_dim)
+        self.to_feature = StyleVectorizer(opt.z_dim, 3, is_discriminator=False)
 
         # self.head = HRNetOCR(1 + opt.semantic_nc + self.opt.z_dim, cfg[f'STAGE4']['NUM_CHANNELS'])
         self.head = HRNetOCR(1 + opt.semantic_nc, cfg[f'STAGE4']['NUM_CHANNELS'])
@@ -1000,7 +1003,7 @@ class HighResolutionNet(nn.Module):
             if i + 1 < len(yl):
                 y = self.incre_modules[i + 1](yl[i + 1])
         features = self.final_layer(y)
-        features = self.feature_linear(features.mean((2, 3)))
+        features = self.to_feature(self.feature_mapper(features.mean((2, 3))))
 
         return features, seg
 

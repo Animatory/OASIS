@@ -7,8 +7,8 @@ import dataloaders.dataloaders as dataloaders
 import models.losses as losses
 import models.models_fast as models
 import utils.utils as utils
-from utils.fid_scores import FIDCalculator
 from trainer import Trainer
+from utils.fid_scores import FIDCalculator
 
 
 def run():
@@ -19,7 +19,7 @@ def run():
 
     # --- create utils ---#
     timer = utils.Timer(opt)
-    visualizer_losses = utils.LossesSaver(opt)
+    # visualizer_losses = utils.LossesSaver(opt)
     losses_computer = losses.LossesComputer(opt)
     dataloader, dataloader_val = dataloaders.get_dataloaders(opt)
     im_saver = utils.ImageSaver(opt)
@@ -32,21 +32,34 @@ def run():
         model.to(gpus[0])
 
     # --- create optimizers ---#
-    G_params = list(model.netG.parameters())
-    D_params = list(model.netD.parameters())
+    G_params = list(model.netG.parameters()) + list(model.to_feature.parameters())
+    D_params = list(model.netD.parameters()) + list(model.to_logit.parameters())
 
-    optimizerG = torch.optim.Adam(G_params, lr=opt.lr_g, betas=(opt.beta1, opt.beta2))
-    optimizerD = torch.optim.Adam(D_params, lr=opt.lr_d, betas=(opt.beta1, opt.beta2))
+    # D_params = []
+    # zero_wd_params_d = []
+    # for name, parameter in model.netD.named_parameters():
+    #     zero_wd = ['relative_position_bias_table', 'absolute_pos_embed', 'norm']
+    #     if any([k in name for k in zero_wd]):
+    #         zero_wd_params_d.append(parameter)
+    #     else:
+    #         D_params.append(parameter)
+    # D_params.extend(list(model.to_logit.parameters()))
+
+    # optimizerD = torch.optim.AdamW([{'params': D_params}, {'params': zero_wd_params_d, 'weight_decay': 0}],
+    #                                lr=opt.lr_d, betas=(opt.beta1, opt.beta2), weight_decay=0.001)
+
+    optimizerG = torch.optim.AdamW(G_params, lr=opt.lr_g, betas=(opt.beta1, opt.beta2))
+    optimizerD = torch.optim.AdamW(D_params, lr=opt.lr_d, betas=(opt.beta1, opt.beta2))
 
     [model], [optimizerD, optimizerG] = amp.initialize(
         [model], [optimizerD, optimizerG], loss_scale=1,
-        opt_level=opt.opt_level, num_losses=2)
+        opt_level=opt.opt_level, num_losses=3)
     optimizerD._lazy_init_maybe_master_weights()
     optimizerG._lazy_init_maybe_master_weights()
 
     model = models.put_on_multi_gpus(model, opt)
 
-    trainer = Trainer(opt, model, optimizerD, optimizerG, losses_computer, visualizer_losses)
+    trainer = Trainer(opt, model, optimizerD, optimizerG, losses_computer, None)
 
     # --- the training loop ---#
     already_started = False
@@ -54,6 +67,8 @@ def run():
     for epoch in range(start_epoch, opt.num_epochs):
         t = tqdm(dataloader, total=len(dataloader))
         for i, data_i in enumerate(t):
+            if i > len(dataloader):
+                break
             if not already_started and i < start_iter:
                 continue
             already_started = True
@@ -69,7 +84,7 @@ def run():
             if cur_iter > 0:
                 if cur_iter % opt.freq_print == 0:
                     im_saver.visualize_batch(model, data['image'], data['label'], cur_iter)
-                    timer(epoch, cur_iter)
+                    # timer(epoch, cur_iter)
                 if cur_iter % opt.freq_save_ckpt == 0:
                     model.save_networks(cur_iter)
                 if cur_iter % opt.freq_save_latest == 0:

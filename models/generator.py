@@ -9,7 +9,6 @@ class OASIS_Generator(nn.Module):
     def __init__(self, opt):
         super().__init__()
         self.opt = opt
-        sp_norm = norms.get_spectral_norm(opt)
         ch = opt.channels_G
         self.channels = [16 * ch, 16 * ch, 16 * ch, 8 * ch, 4 * ch, 2 * ch, 1 * ch]
         self.init_w = opt.image_size // (2 ** (opt.num_res_blocks - 1))
@@ -30,17 +29,21 @@ class OASIS_Generator(nn.Module):
         b, c, h, w = labels.shape
         zeros = torch.zeros(b, self.opt.z_dim, dtype=labels.dtype,
                             device=labels.device, requires_grad=False)
+        # if zero_noise:
+        #     features = zeros
+        # else:
+        #     if features is None:
+        #         log_var = zeros
+        #         mu = zeros
+        #     else:
+        #         mu, log_var = torch.chunk(features, 2, dim=1)
+        #     std = torch.exp(0.5 * log_var)
+        #     features = torch.randn_like(std)
+        #     features = features * std + mu
         if zero_noise:
             features = zeros
-        else:
-            if features is None:
-                log_var = zeros
-                mu = zeros
-            else:
-                mu, log_var = torch.chunk(features, 2, dim=1)
-            std = torch.exp(0.5 * log_var)
-            features = torch.randn_like(std)
-            features = features * std + mu
+        elif features is None:
+            features = torch.randn_like(zeros)
 
         if features.ndim == 2:
             features = features[:, :, None, None].expand(b, self.opt.z_dim, h, w)

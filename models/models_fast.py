@@ -16,6 +16,10 @@ class OASIS(nn.Module):
         self.netG = OASIS_Generator(opt)
         self.netD = DISCRIMINATORS[opt.discriminator](opt=opt)
         self.label_smoother = LabelSmoother(kernel_size=9, sigma=3, channels=opt.semantic_nc)
+
+        self.to_feature = StyleVectorizer(opt.z_dim, 6, is_discriminator=False)
+        self.to_logit = StyleVectorizer(opt.z_dim, 3, is_discriminator=True)
+
         self.print_parameter_count()
         # --- EMA of generator weights ---
         if not self.opt.no_EMA:
@@ -24,7 +28,7 @@ class OASIS(nn.Module):
         # --- load previous checkpoints if needed ---
         self.load_checkpoints()
 
-    def forward(self, image=None, label=None, mode=None, is_ema=None, noise=None):
+    def forward(self, image=None, label=None, mode=None, is_ema=None, noise=None, image_unsup=None):
         if mode == "generate":
             with torch.no_grad():
                 if is_ema is None:
@@ -32,6 +36,11 @@ class OASIS(nn.Module):
                 else:
                     is_ema = is_ema and not self.opt.no_EMA
                 model = self.netEMA if is_ema else self.netG
+                if noise is None:
+                    b, c, h, w = label.shape
+                    noise = torch.zeros(b, self.opt.z_dim, dtype=label.dtype,
+                                        device=label.device, requires_grad=False)
+                    noise = self.to_feature(noise)
                 fake = model(labels=label[:, -self.opt.semantic_nc:], features=noise)
             return fake
 
@@ -44,22 +53,28 @@ class OASIS(nn.Module):
         features, labels = self.netD(input)[:2]
         return features, labels
 
-    def load_checkpoints(self):
+    def load_checkpoints(self, save_whole_network=True):
         if self.opt.phase == "test":
             which_iter = self.opt.ckpt_iter
             path = self.opt.checkpoints_dir / self.opt.name / "models"
-            if self.opt.no_EMA:
-                self.netG.load_state_dict(torch.load(path / f"{which_iter}_G.pth"))
+            if save_whole_network:
+                self.load_state_dict(torch.load(path / f"{which_iter}.pth"))
             else:
-                self.netEMA.load_state_dict(torch.load(path / f"{which_iter}_EMA.pth"))
-            self.netD.load_state_dict(torch.load(path / f"{which_iter}_D.pth"))
+                if self.opt.no_EMA:
+                    self.netG.load_state_dict(torch.load(path / f"{which_iter}_G.pth"))
+                else:
+                    self.netEMA.load_state_dict(torch.load(path / f"{which_iter}_EMA.pth"))
+                self.netD.load_state_dict(torch.load(path / f"{which_iter}_D.pth"))
         elif self.opt.continue_train:
             which_iter = self.opt.which_iter
             path = self.opt.checkpoints_dir / self.opt.name / "models"
-            self.netG.load_state_dict(torch.load(path / f"{which_iter}_G.pth"))
-            self.netD.load_state_dict(torch.load(path / f"{which_iter}_D.pth"))
-            if not self.opt.no_EMA:
-                self.netEMA.load_state_dict(torch.load(path / f"{which_iter}_EMA.pth"))
+            if save_whole_network:
+                self.load_state_dict(torch.load(path / f"{which_iter}.pth"))
+            else:
+                self.netG.load_state_dict(torch.load(path / f"{which_iter}_G.pth"))
+                self.netD.load_state_dict(torch.load(path / f"{which_iter}_D.pth"))
+                if not self.opt.no_EMA:
+                    self.netEMA.load_state_dict(torch.load(path / f"{which_iter}_EMA.pth"))
 
     def print_parameter_count(self):
         if self.opt.phase == "train":
@@ -101,29 +116,41 @@ class OASIS(nn.Module):
                     if num_upd > 50:
                         break
 
-    def save_networks(self, cur_iter, latest=False, best=False):
+    def save_networks(self, cur_iter, latest=False, best=False, save_whole_network=True):
         opt = self.opt
         path = opt.checkpoints_dir / opt.name / "models"
         path.mkdir(exist_ok=True)
-        if latest:
-            torch.save(self.netG.state_dict(), path / 'latest_G.pth')
-            torch.save(self.netD.state_dict(), path / 'latest_D.pth')
-            if not opt.no_EMA:
-                torch.save(self.netEMA.state_dict(), path / 'latest_EMA.pth')
-            file = opt.checkpoints_dir / opt.name / "latest_iter.txt"
-            file.write_text(str(cur_iter))
-        elif best:
-            torch.save(self.netG.state_dict(), path / 'best_G.pth')
-            torch.save(self.netD.state_dict(), path / 'best_D.pth')
-            if not opt.no_EMA:
-                torch.save(self.netEMA.state_dict(), path / 'best_EMA.pth')
-            file = opt.checkpoints_dir / opt.name / "best_iter.txt"
-            file.write_text(str(cur_iter))
+        if save_whole_network:
+            if latest:
+                torch.save(self.state_dict(), path / 'latest.pth')
+                file = opt.checkpoints_dir / opt.name / "latest_iter.txt"
+                file.write_text(str(cur_iter))
+            elif best:
+                torch.save(self.state_dict(), path / 'best.pth')
+                file = opt.checkpoints_dir / opt.name / "best_iter.txt"
+                file.write_text(str(cur_iter))
+            else:
+                torch.save(self.state_dict(), path / f'{cur_iter}.pth')
         else:
-            torch.save(self.netG.state_dict(), path / f'{cur_iter}_G.pth')
-            torch.save(self.netD.state_dict(), path / f'{cur_iter}_D.pth')
-            if not opt.no_EMA:
-                torch.save(self.netEMA.state_dict(), path / f'{cur_iter}_EMA.pth')
+            if latest:
+                torch.save(self.netG.state_dict(), path / 'latest_G.pth')
+                torch.save(self.netD.state_dict(), path / 'latest_D.pth')
+                if not opt.no_EMA:
+                    torch.save(self.netEMA.state_dict(), path / 'latest_EMA.pth')
+                file = opt.checkpoints_dir / opt.name / "latest_iter.txt"
+                file.write_text(str(cur_iter))
+            elif best:
+                torch.save(self.netG.state_dict(), path / 'best_G.pth')
+                torch.save(self.netD.state_dict(), path / 'best_D.pth')
+                if not opt.no_EMA:
+                    torch.save(self.netEMA.state_dict(), path / 'best_EMA.pth')
+                file = opt.checkpoints_dir / opt.name / "best_iter.txt"
+                file.write_text(str(cur_iter))
+            else:
+                torch.save(self.netG.state_dict(), path / f'{cur_iter}_G.pth')
+                torch.save(self.netD.state_dict(), path / f'{cur_iter}_D.pth')
+                if not opt.no_EMA:
+                    torch.save(self.netEMA.state_dict(), path / f'{cur_iter}_EMA.pth')
 
     @staticmethod
     def generate_labelmix(label, fake_image, real_image):
@@ -163,6 +190,41 @@ class LabelSmoother(nn.Module):
         self.gaussian_kernel = self.gaussian_kernel.to(labels)
         smoothed_labels = F.conv2d(labels, self.gaussian_kernel, padding=self.mean, groups=self.channels)
         return F.normalize(smoothed_labels, p=1, dim=1)
+
+
+class EqualLinear(nn.Module):
+    def __init__(self, in_dim, out_dim, lr_mul=1, bias=True):
+        super().__init__()
+        self.weight = nn.Parameter(torch.randn(out_dim, in_dim))
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(out_dim))
+
+        self.lr_mul = lr_mul
+
+    def forward(self, x):
+        return F.linear(x, self.weight * self.lr_mul, bias=self.bias * self.lr_mul)
+
+
+class StyleVectorizer(nn.Module):
+    def __init__(self, emb, depth, is_discriminator=False, lr_mul=0.1):
+        super().__init__()
+        self.is_discriminator = is_discriminator
+
+        layers = []
+        for i in range(depth - 1):
+            layers.extend([EqualLinear(emb, emb, lr_mul), nn.LeakyReLU(0.2, inplace=True)])
+
+        if is_discriminator:
+            layers.append(EqualLinear(emb, 1, lr_mul))
+        else:
+            layers.append(EqualLinear(emb, emb, lr_mul))
+
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        if not self.is_discriminator:
+            x = F.normalize(x, dim=1)
+        return self.net(x)
 
 
 def put_on_multi_gpus(model, opt):

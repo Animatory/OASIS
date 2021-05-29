@@ -39,6 +39,7 @@ class FIDCalculator:
 
     def accumulate_inception_activations(self):
         pool, logits, labels = [], [], []
+        torch.cuda.empty_cache()
         self.model_inc.eval()
         with torch.no_grad():
             for i, data_i in enumerate(self.val_dataloader):
@@ -46,9 +47,11 @@ class FIDCalculator:
                 image = (image + 1) / 2
                 pool_val = self.model_inc(image.float())[0][:, :, 0, 0].cpu()
                 pool += [pool_val]
+        torch.cuda.empty_cache()
         return torch.cat(pool, 0)
 
     def compute_fid_with_valid_path(self, model):
+        torch.cuda.empty_cache()
         pool, logits, labels = [], [], []
         self.model_inc.eval()
         model.eval()
@@ -63,6 +66,7 @@ class FIDCalculator:
             mu, sigma = torch.mean(pool, 0), torch_cov(pool, rowvar=False)
             answer = numpy_calculate_frechet_distance(self.m1, self.s1, mu, sigma)
         model.train()
+        torch.cuda.empty_cache()
         return answer
 
     def update(self, model, cur_iter):

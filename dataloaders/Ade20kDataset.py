@@ -3,6 +3,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pandas as pd
 import torch
 from PIL import Image
 from albumentations import Compose, RandomResizedCrop, HorizontalFlip, Normalize, \
@@ -69,6 +70,16 @@ class Ade20kDataset(torch.utils.data.Dataset):
         dataroot_ann = dataroot / 'annotations' / mode
         images = sorted(dataroot_img.glob('**/*.jpg'))
         labels = sorted(dataroot_ann.glob('**/*.png'))
+
+        data = (dataroot / 'sceneCategories.txt').read_text().splitlines()
+        images_scenes = pd.DataFrame([i.split() for i in data], columns=['name', 'scene'])
+        counts = images_scenes.scene.value_counts()
+        appropriate = ['office', 'kitchen', 'corridor', 'home_office', 'attic', 'parlor', 'closet', 'nursery', 'lobby',
+                       'warehouse_indoor']
+        names = counts[pd.Series(counts.index).apply(lambda x: 'room' in x or x in appropriate).values].index
+        appropriate = set(images_scenes[images_scenes.scene.isin(names)].name)
+        images = [i for i in images if i.stem in appropriate]
+        labels = [i for i in labels if i.stem in appropriate]
 
         assert len(images) == len(labels), f"different len of images and labels {len(images)} - {len(labels)}"
         for image_path, label_path in zip(images, labels):
