@@ -41,8 +41,8 @@ def get_dataloaders(opt):
     # )
 
     dataloader_train = data.DataLoader(dataset_train, batch_size=opt.batch_size, persistent_workers=True,
-                                       shuffle=True, drop_last=True, num_workers=8)
+                                       shuffle=True, drop_last=True, num_workers=12)
     dataloader_val = data.DataLoader(dataset_val, batch_size=opt.batch_size, persistent_workers=True,
-                                     shuffle=False, drop_last=False, num_workers=8)
+                                     shuffle=False, drop_last=False, num_workers=12)
 
-    return dataloader_train, dataloader_val
+    return dataloader_train, dataloader_val, dataset_train, dataset_val

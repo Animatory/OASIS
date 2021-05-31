@@ -75,6 +75,14 @@ class DataParallelWithCallback(DataParallel):
         return self.module.netD
 
     @property
+    def to_feature(self):
+        return self.module.to_feature
+
+    @property
+    def to_logit(self):
+        return self.module.to_logit
+
+    @property
     def netEMA(self):
         return self.module.netEMA
 

@@ -984,6 +984,8 @@ class HighResolutionNet(nn.Module):
 
     def forward(self, x):
         orig_x = x
+        # x = F.interpolate(x, scale_factor=(256, 256), mode='bilinear', align_corners=True)
+
         # Stem
         x = self.conv1(x)
         x = self.bn1(x)

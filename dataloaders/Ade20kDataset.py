@@ -45,6 +45,9 @@ class Ade20kDataset(torch.utils.data.Dataset):
         ])
         self.transforms = Compose(transforms_list)
 
+        # self.label_counter = np.zeros((len(self), opt.label_nc))
+        # self.c = 0
+
     def __len__(self):
         return len(self.images)
 
@@ -54,6 +57,16 @@ class Ade20kDataset(torch.utils.data.Dataset):
         # assert image.shape[:2] == label.shape[:2]
         if image.shape[:2] != label.shape[:2]:
             image = cv2.resize(image, label.shape[::-1])
+
+        # if self.c < len(self):
+        #     counts = np.bincount(label.flatten(), minlength=self.opt.semantic_nc)[1:]
+        #     if counts.sum() == 0:
+        #         counts = np.ones_like(counts) / self.opt.label_nc
+        #     else:
+        #         counts = counts / counts.sum()
+        #     self.label_counter[idx] = counts
+        #     self.c += 1
+
         data = self.transforms(image=image, mask=label)
         sample = {"image": data['image'], "label": data['mask'].long(), "name": self.images[idx].name}
 
@@ -71,15 +84,15 @@ class Ade20kDataset(torch.utils.data.Dataset):
         images = sorted(dataroot_img.glob('**/*.jpg'))
         labels = sorted(dataroot_ann.glob('**/*.png'))
 
-        data = (dataroot / 'sceneCategories.txt').read_text().splitlines()
-        images_scenes = pd.DataFrame([i.split() for i in data], columns=['name', 'scene'])
-        counts = images_scenes.scene.value_counts()
-        appropriate = ['office', 'kitchen', 'corridor', 'home_office', 'attic', 'parlor', 'closet', 'nursery', 'lobby',
-                       'warehouse_indoor']
-        names = counts[pd.Series(counts.index).apply(lambda x: 'room' in x or x in appropriate).values].index
-        appropriate = set(images_scenes[images_scenes.scene.isin(names)].name)
-        images = [i for i in images if i.stem in appropriate]
-        labels = [i for i in labels if i.stem in appropriate]
+        # data = (dataroot / 'sceneCategories.txt').read_text().splitlines()
+        # images_scenes = pd.DataFrame([i.split() for i in data], columns=['name', 'scene'])
+        # counts = images_scenes.scene.value_counts()
+        # appropriate = ['office', 'kitchen', 'corridor', 'home_office', 'attic', 'parlor', 'closet', 'nursery', 'lobby',
+        #                'warehouse_indoor']
+        # names = counts[pd.Series(counts.index).apply(lambda x: 'room' in x or x in appropriate).values].index
+        # appropriate = set(images_scenes[images_scenes.scene.isin(names)].name)
+        # images = [i for i in images if i.stem in appropriate]
+        # labels = [i for i in labels if i.stem in appropriate]
 
         assert len(images) == len(labels), f"different len of images and labels {len(images)} - {len(labels)}"
         for image_path, label_path in zip(images, labels):

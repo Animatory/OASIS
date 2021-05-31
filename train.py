@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from apex import amp
 from tqdm import tqdm
 
@@ -9,6 +10,8 @@ import models.models_fast as models
 import utils.utils as utils
 from trainer import Trainer
 from utils.fid_scores import FIDCalculator
+from utils.miou import MetricManager
+from utils.resampling import resample_dataset
 
 
 def run():
@@ -21,9 +24,10 @@ def run():
     timer = utils.Timer(opt)
     # visualizer_losses = utils.LossesSaver(opt)
     losses_computer = losses.LossesComputer(opt)
-    dataloader, dataloader_val = dataloaders.get_dataloaders(opt)
+    dataloader, dataloader_val, dataset_train, dataset_val = dataloaders.get_dataloaders(opt)
     im_saver = utils.ImageSaver(opt)
     fid_computer = FIDCalculator(opt, dataloader_val)
+    metric_meter = MetricManager(opt)
 
     # --- create models ---#
     model = models.OASIS(opt)
@@ -35,25 +39,12 @@ def run():
     G_params = list(model.netG.parameters()) + list(model.to_feature.parameters())
     D_params = list(model.netD.parameters()) + list(model.to_logit.parameters())
 
-    # D_params = []
-    # zero_wd_params_d = []
-    # for name, parameter in model.netD.named_parameters():
-    #     zero_wd = ['relative_position_bias_table', 'absolute_pos_embed', 'norm']
-    #     if any([k in name for k in zero_wd]):
-    #         zero_wd_params_d.append(parameter)
-    #     else:
-    #         D_params.append(parameter)
-    # D_params.extend(list(model.to_logit.parameters()))
-
-    # optimizerD = torch.optim.AdamW([{'params': D_params}, {'params': zero_wd_params_d, 'weight_decay': 0}],
-    #                                lr=opt.lr_d, betas=(opt.beta1, opt.beta2), weight_decay=0.001)
-
     optimizerG = torch.optim.AdamW(G_params, lr=opt.lr_g, betas=(opt.beta1, opt.beta2))
     optimizerD = torch.optim.AdamW(D_params, lr=opt.lr_d, betas=(opt.beta1, opt.beta2))
 
     [model], [optimizerD, optimizerG] = amp.initialize(
-        [model], [optimizerD, optimizerG], loss_scale=1,
-        opt_level=opt.opt_level, num_losses=3)
+        [model], [optimizerD, optimizerG], loss_scale=0.5,
+        opt_level=opt.opt_level, num_losses=2)
     optimizerD._lazy_init_maybe_master_weights()
     optimizerG._lazy_init_maybe_master_weights()
 
@@ -65,6 +56,7 @@ def run():
     already_started = False
     start_epoch, start_iter = utils.get_start_iters(opt.loaded_latest_iter, len(dataloader))
     for epoch in range(start_epoch, opt.num_epochs):
+        print(f'Epoch {epoch} started')
         t = tqdm(dataloader, total=len(dataloader))
         for i, data_i in enumerate(t):
             if i > len(dataloader):
@@ -83,16 +75,33 @@ def run():
                 model.update_ema(cur_iter, dataloader, opt)
             if cur_iter > 0:
                 if cur_iter % opt.freq_print == 0:
+                    torch.cuda.empty_cache()
                     im_saver.visualize_batch(model, data['image'], data['label'], cur_iter)
                     # timer(epoch, cur_iter)
                 if cur_iter % opt.freq_save_ckpt == 0:
+                    torch.cuda.empty_cache()
                     model.save_networks(cur_iter)
                 if cur_iter % opt.freq_save_latest == 0:
+                    torch.cuda.empty_cache()
                     model.save_networks(cur_iter, latest=True)
                 if cur_iter % opt.freq_fid == 0:
+                    torch.cuda.empty_cache()
                     is_best = fid_computer.update(model, cur_iter)
                     if is_best:
                         model.save_networks(cur_iter, best=True)
+        t.close()
+
+        t = tqdm(dataloader_val, total=len(dataloader_val))
+        for i, data_i in enumerate(t):
+            data = models.preprocess_input(opt, data_i)
+            targets = data['label'].argmax(1)
+            predictions, _ = model.forward(**data, mode='predict')
+            metric_meter.update(targets, predictions)
+        t.close()
+        torch.cuda.empty_cache()
+        ious_per_class = metric_meter.on_epoch_end(epoch)
+        print(f'Epoch {epoch}, mIoU: {np.mean(ious_per_class)}')
+        # dataloader = resample_dataset(opt, dataset_train, ious_per_class)
 
     # --- after training ---#
     model.update_ema(cur_iter, dataloader, opt, force_run_stats=True)

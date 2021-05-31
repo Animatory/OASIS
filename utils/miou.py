@@ -1,9 +1,38 @@
 from typing import Union
+from pathlib import Path
 
 import numpy as np
 from numpy import ndarray
 
 from .common import Metric, ConfusionMatrix
+
+
+class MetricManager:
+    phases = ['train', 'valid', 'test']
+    """Manages all metrics for the model,
+    stores their values at checkpoints"""
+
+    def __init__(self, opt):
+        self.opt = opt
+        self.miou_meter = MeanIntersectionOverUnionMeter(num_classes=opt.semantic_nc, reduce=False)
+
+    def update(self, target, predictions):
+        predictions = predictions.cpu().detach().numpy()
+        target = target.cpu().detach().numpy()
+
+        self.miou_meter.update(target, predictions)
+
+    def on_epoch_end(self, epoch):
+        results = self.miou_meter.on_epoch_end()
+        path_to_save: Path = self.opt.checkpoints_dir / self.opt.name / 'miou.npy'
+        if path_to_save.exists():
+            prev_data = np.load(path_to_save, allow_pickle=True).item()
+        else:
+            prev_data = dict()
+        total_score = np.mean(results)
+        prev_data[epoch] = {'total': total_score, 'per_class': results}
+        np.save(path_to_save, prev_data)
+        return results
 
 
 class MeanIntersectionOverUnionMeter(Metric):
@@ -96,7 +125,9 @@ class MeanIntersectionOverUnionMeter(Metric):
         multihot[self._target_classes] = True
         valid_classes = valid_classes & multihot
 
-        if not self._weighted:
+        if not self._reduce:
+            score = scores
+        elif not self._weighted:
             score = np.mean(scores[valid_classes])
         else:
             weights = np.divide(pos_gt, conf_matrix.sum())
@@ -119,7 +150,7 @@ class MeanIntersectionOverUnionMeter(Metric):
         if self._reduce:
             return np.mean(ious)
         else:
-            return ious
+            return np.array(ious).mean(0)
 
     def calculate(self, target: ndarray, prediction: ndarray) -> ndarray:
         """Calculate IoU metric based on the predicted and target pair.

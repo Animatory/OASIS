@@ -114,53 +114,6 @@ class Trainer:
         # torch.cuda.empty_cache()
         return loss_d, loss_g
 
-    # def mode_alae(self, data):
-    #     real_image = data['image']
-    #     labels = data['label']
-    #     loss_computer = self.loss_computer
-    #
-    #     # --- generator update ---#
-    #     self.model.netG.zero_grad()
-    #     self.model.to_feature.zero_grad()
-    #     b, c, h, w = labels.shape
-    #
-    #     noise = torch.randn(b, self.opt.z_dim, dtype=labels.dtype,
-    #                         device=labels.device, requires_grad=False)
-    #     features = self.model.to_feature(noise)
-    #     fake_image = self.model.netG(labels=labels, features=features)
-    #
-    #     fake_features, fake_labels = self.model.netD(fake_image)
-    #     loss_g = loss_computer.loss(fake_labels, labels, True)
-    #     loss_g += self.model.to_logit(fake_features).mean()
-    #     loss_g += F.mse_loss(fake_features, features)
-    #
-    #     with amp.scale_loss(loss_g, self.optimizer_g, loss_id=0) as loss_g_scaled:
-    #         loss_g_scaled.backward()
-    #     self.optimizer_g.step()
-    #
-    #     # --- discriminator update ---#
-    #     self.model.netD.zero_grad()
-    #     self.model.to_logit.zero_grad()
-    #     fake_image_dt = fake_image.detach()
-    #     features_dt = features.detach()
-    #
-    #     real_features, real_labels = self.model.netD(real_image)
-    #     loss_d_real = loss_computer.loss(real_labels, labels, True)
-    #     loss_d_real += F.softplus(1 + self.model.to_logit(real_features)).mean()
-    #
-    #     fake_features, fake_labels = self.model.netD(fake_image_dt)
-    #     loss_d_fake = loss_computer.loss(fake_labels, labels, False)
-    #     loss_d_fake += F.mse_loss(fake_features, features_dt)
-    #     loss_d_fake += F.softplus(1 - self.model.to_logit(fake_features)).mean()
-    #
-    #     loss_d_lm = self.forward_labelmix(labels, fake_image_dt, real_image, fake_labels, real_labels)
-    #     loss_d = loss_d_real + loss_d_fake + loss_d_lm + self.forward_unsup(data)
-    #     with amp.scale_loss(loss_d, self.optimizer_d, loss_id=1) as loss_d_scaled:
-    #         loss_d_scaled.backward()
-    #     self.optimizer_d.step()
-    #
-    #     return loss_d, loss_g
-
     def mode_alae(self, data):
         real_image = data['image']
         labels = data['label']
@@ -175,23 +128,29 @@ class Trainer:
         loss_d_real = loss_computer.loss(real_labels, labels, True)
         loss_d_real += F.softplus(1 + self.model.to_logit(real_features)).mean()
 
-        noise = torch.randn(b, self.opt.z_dim, dtype=labels.dtype,
-                            device=labels.device, requires_grad=False)
-        features = self.model.to_feature(noise)
+        from_real = random.random() > 0.5
+        if from_real:
+            features = real_features.detach()
+        else:
+            noise = torch.randn(b, self.opt.z_dim, dtype=labels.dtype,
+                                device=labels.device, requires_grad=False)
+            features = self.model.to_feature(noise)
         fake_image = self.model.netG(labels=labels, features=features)
-        fake_image_dt = fake_image.detach()
         features_dt = features.detach()
+        fake_image_dt = fake_image.detach()
 
         fake_features, fake_labels = self.model.netD(fake_image_dt)
         loss_d_fake = loss_computer.loss(fake_labels, labels, False)
-        # loss_d_fake += F.mse_loss(fake_features, features_dt)
         loss_d_fake += F.softplus(1 - self.model.to_logit(fake_features)).mean()
+        loss_d_fake += F.mse_loss(fake_features, features_dt)
+        if not from_real:
+            loss_d_fake += F.softplus(1 - self.model.to_logit(features_dt)).mean()
 
         loss_d_lm = self.forward_labelmix(labels, fake_image_dt, real_image, fake_labels, real_labels)
         loss_d = loss_d_real + loss_d_fake + loss_d_lm + self.forward_unsup(data)
         with amp.scale_loss(loss_d, self.optimizer_d, loss_id=0) as loss_d_scaled:
             loss_d_scaled.backward()
-        self.optimizer_d.step()
+            self.optimizer_d.step()
 
         # --- generator update ---#
         self.model.netG.zero_grad()
@@ -200,24 +159,26 @@ class Trainer:
         fake_features, fake_labels = self.model.netD(fake_image)
         loss_g = loss_computer.loss(fake_labels, labels, True)
         loss_g += self.model.to_logit(fake_features).mean()
-        # loss_g += F.mse_loss(fake_features, features_dt)
+        loss_g += F.mse_loss(fake_features, features_dt)
+        if not from_real:
+            loss_g += self.model.to_logit(features).mean()
 
         with amp.scale_loss(loss_g, self.optimizer_g, loss_id=1) as loss_g_scaled:
             loss_g_scaled.backward()
-        self.optimizer_g.step()
+            self.optimizer_g.step()
 
-        # --- autoencoder update ---#
-        self.model.netD.zero_grad()
-        self.model.netG.zero_grad()
+        # # --- autoencoder update ---#
+        # self.model.zero_grad()
+        # #
+        # features_dt = real_features.detach()
+        # fake_image = self.model.netG(labels=labels, features=features_dt)
+        # fake_features, fake_labels = self.model.netD(fake_image)
+        # loss_ae = F.mse_loss(fake_features, features_dt)
         #
-        fake_image = self.model.netG(labels=labels, features=features_dt)
-        fake_features, fake_labels = self.model.netD(fake_image)
-        loss_ae = F.mse_loss(fake_features, features_dt)
-
-        with amp.scale_loss(loss_ae, [self.optimizer_g, self.optimizer_d], loss_id=2) as loss_ae_scaled:
-            loss_ae_scaled.backward()
-        self.optimizer_g.step()
-        self.optimizer_d.step()
+        # with amp.scale_loss(loss_ae, [self.optimizer_g, self.optimizer_d], loss_id=2) as loss_ae_scaled:
+        #     loss_ae_scaled.backward()
+        # self.optimizer_g.step()
+        # self.optimizer_d.step()
 
         return loss_d, loss_g
 
