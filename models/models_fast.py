@@ -58,7 +58,7 @@ class OASIS(nn.Module):
             which_iter = self.opt.ckpt_iter
             path = self.opt.checkpoints_dir / self.opt.name / "models"
             if save_whole_network:
-                self.load_state_dict(torch.load(path / f"{which_iter}.pth"))
+                self.load_state_dict(torch.load(path / f"{which_iter}.pth"), strict=False)
             else:
                 if self.opt.no_EMA:
                     self.netG.load_state_dict(torch.load(path / f"{which_iter}_G.pth"))
@@ -69,7 +69,7 @@ class OASIS(nn.Module):
             which_iter = self.opt.which_iter
             path = self.opt.checkpoints_dir / self.opt.name / "models"
             if save_whole_network:
-                self.load_state_dict(torch.load(path / f"{which_iter}.pth"))
+                self.load_state_dict(torch.load(path / f"{which_iter}.pth"), strict=False)
             else:
                 self.netG.load_state_dict(torch.load(path / f"{which_iter}_G.pth"))
                 self.netD.load_state_dict(torch.load(path / f"{which_iter}_D.pth"))
@@ -206,25 +206,28 @@ class EqualLinear(nn.Module):
 
 
 class StyleVectorizer(nn.Module):
-    def __init__(self, emb, depth, is_discriminator=False, lr_mul=0.1):
+    def __init__(self, emb, depth, is_discriminator=False):
         super().__init__()
         self.is_discriminator = is_discriminator
 
         layers = []
         for i in range(depth - 1):
-            layers.extend([EqualLinear(emb, emb, lr_mul), nn.LeakyReLU(0.2, inplace=True)])
+            layers.extend([nn.Linear(emb, emb), nn.LayerNorm(emb), nn.LeakyReLU(0.2, inplace=True)])
 
         if is_discriminator:
-            layers.append(EqualLinear(emb, 1, lr_mul))
+            layers.append(nn.Linear(emb, 1))
         else:
-            layers.append(EqualLinear(emb, emb, lr_mul))
+            layers.append(nn.Linear(emb, emb))
 
         self.net = nn.Sequential(*layers)
 
     def forward(self, x):
         if not self.is_discriminator:
             x = F.normalize(x, dim=1)
-        return self.net(x)
+        x = self.net(x)
+        if not self.is_discriminator:
+            x = F.normalize(x, dim=1)
+        return x
 
 
 def put_on_multi_gpus(model, opt):

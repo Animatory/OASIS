@@ -126,25 +126,37 @@ class Trainer:
 
         real_features, real_labels = self.model.netD(real_image)
         loss_d_real = loss_computer.loss(real_labels, labels, True)
-        loss_d_real += F.softplus(1 + self.model.to_logit(real_features)).mean()
+        loss_d_real += F.softplus(self.model.to_logit(real_features)).mean()
 
-        from_real = random.random() > 0.5
-        if from_real:
-            features = real_features.detach()
-        else:
-            noise = torch.randn(b, self.opt.z_dim, dtype=labels.dtype,
-                                device=labels.device, requires_grad=False)
-            features = self.model.to_feature(noise)
+        # from_real = random.random() > 0.5
+        # if from_real:
+        #     features = real_features.detach()
+        #     fake_image = self.model.netG(labels=labels, features=features)
+        # else:
+        #     noise = torch.randn(b, self.opt.z_dim, dtype=labels.dtype,
+        #                         device=labels.device, requires_grad=False)
+        #     features = self.model.to_feature(noise)
+        #     with torch.no_grad():
+        #         real_soft_labels = torch.softmax(real_labels.detach(), 1)[:, 1:]
+        #     fake_image = self.model.netG(labels=real_soft_labels, features=features)
+
+        noise = torch.randn(b, self.opt.z_dim, dtype=labels.dtype,
+                            device=labels.device, requires_grad=False)
+        features = self.model.to_feature(noise)
         fake_image = self.model.netG(labels=labels, features=features)
         features_dt = features.detach()
         fake_image_dt = fake_image.detach()
 
         fake_features, fake_labels = self.model.netD(fake_image_dt)
         loss_d_fake = loss_computer.loss(fake_labels, labels, False)
-        loss_d_fake += F.softplus(1 - self.model.to_logit(fake_features)).mean()
-        loss_d_fake += F.mse_loss(fake_features, features_dt)
-        if not from_real:
-            loss_d_fake += F.softplus(1 - self.model.to_logit(features_dt)).mean()
+        # loss_d_fake += F.mse_loss(fake_features, features_dt)
+        loss_d_fake += (1 - (fake_features * features_dt).sum(1)) / 2
+        loss_d_fake += F.softplus(-self.model.to_logit(fake_features)).mean()
+        loss_d_fake += F.softplus(-self.model.to_logit(features_dt)).mean()
+        # if from_real:
+        #     loss_d_fake += loss_computer.loss(fake_labels, labels, False)
+        # else:
+        #     loss_d_fake += F.softplus(-self.model.to_logit(features_dt)).mean()
 
         loss_d_lm = self.forward_labelmix(labels, fake_image_dt, real_image, fake_labels, real_labels)
         loss_d = loss_d_real + loss_d_fake + loss_d_lm + self.forward_unsup(data)
@@ -158,10 +170,14 @@ class Trainer:
 
         fake_features, fake_labels = self.model.netD(fake_image)
         loss_g = loss_computer.loss(fake_labels, labels, True)
-        loss_g += self.model.to_logit(fake_features).mean()
-        loss_g += F.mse_loss(fake_features, features_dt)
-        if not from_real:
-            loss_g += self.model.to_logit(features).mean()
+        # loss_g += F.mse_loss(fake_features, features_dt)
+        loss_g += (1 - (fake_features * features_dt).sum(1)) / 2
+        loss_g += F.softplus(self.model.to_logit(features)).mean()
+        loss_g += F.softplus(self.model.to_logit(fake_features)).mean()
+        # if from_real:
+        #     loss_g += loss_computer.loss(fake_labels, labels, True)
+        # else:
+        #     loss_g += F.softplus(self.model.to_logit(features)).mean()
 
         with amp.scale_loss(loss_g, self.optimizer_g, loss_id=1) as loss_g_scaled:
             loss_g_scaled.backward()

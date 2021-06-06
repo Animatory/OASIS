@@ -369,7 +369,7 @@ class ModuleHelper:
     def BNReLU(num_features, bn_type=None, **kwargs):
         return nn.Sequential(
             BatchNorm2d(num_features, **kwargs),
-            nn.ReLU()
+            nn.LeakyReLU()
         )
 
     @staticmethod
@@ -537,7 +537,7 @@ class HRNetOCR(nn.Module):
         self.conv3x3_ocr = nn.Sequential(
             nn.Conv2d(encoder_channels, ocr_mid_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(ocr_mid_channels),
-            nn.ReLU()
+            nn.LeakyReLU()
         )
 
         self.ocr_gather_head = SpatialGather_Module(num_classes)
@@ -555,7 +555,7 @@ class HRNetOCR(nn.Module):
             nn.Conv2d(encoder_channels, encoder_channels,
                       kernel_size=1, stride=1, padding=0),
             nn.BatchNorm2d(encoder_channels),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Conv2d(encoder_channels, num_classes,
                       kernel_size=1, stride=1, padding=0, bias=True)
         )
@@ -599,7 +599,7 @@ class HRNetHead(nn.Module):
             nn.Conv2d(encoder_channels, encoder_channels,
                       kernel_size=1, stride=1, padding=0),
             nn.BatchNorm2d(encoder_channels),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Conv2d(encoder_channels, num_classes,
                       kernel_size=1, stride=1, padding=0, bias=True)
         )
@@ -624,7 +624,7 @@ class BasicBlock(nn.Module):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = BatchNorm2d(planes, momentum=_BN_MOMENTUM)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.LeakyReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
         self.bn2 = BatchNorm2d(planes, momentum=_BN_MOMENTUM)
         self.downsample = downsample
@@ -659,7 +659,7 @@ class Bottleneck(nn.Module):
                                bias=False)
         self.bn3 = BatchNorm2d(planes * self.expansion,
                                momentum=_BN_MOMENTUM)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.LeakyReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
 
@@ -697,7 +697,7 @@ class HighResolutionModule(nn.Module):
 
         self.branches = self._make_branches(num_branches, blocks, num_blocks, num_channels)
         self.fuse_layers = self._make_fuse_layers()
-        self.fuse_act = nn.ReLU(False)
+        self.fuse_act = nn.LeakyReLU(False)
 
     def _check_branches(self, num_branches, blocks, num_blocks, num_inchannels, num_channels):
         error_msg = ''
@@ -765,7 +765,7 @@ class HighResolutionModule(nn.Module):
                             conv3x3s.append(nn.Sequential(
                                 nn.Conv2d(num_inchannels[j], num_outchannels_conv3x3, 3, 2, 1, bias=False),
                                 nn.BatchNorm2d(num_outchannels_conv3x3, momentum=_BN_MOMENTUM),
-                                nn.ReLU(False)))
+                                nn.LeakyReLU(False)))
                     fuse_layer.append(nn.Sequential(*conv3x3s))
             fuse_layers.append(nn.ModuleList(fuse_layer))
 
@@ -811,10 +811,10 @@ class HighResolutionNet(nn.Module):
         stem_width = cfg['STEM_WIDTH']
         self.conv1 = nn.Conv2d(in_chans, stem_width, kernel_size=3, stride=2, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(stem_width, momentum=_BN_MOMENTUM)
-        self.act1 = nn.ReLU(inplace=True)
+        self.act1 = nn.LeakyReLU(inplace=True)
         self.conv2 = nn.Conv2d(stem_width, 64, kernel_size=3, stride=2, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(64, momentum=_BN_MOMENTUM)
-        self.act2 = nn.ReLU(inplace=True)
+        self.act2 = nn.LeakyReLU(inplace=True)
 
         self.stage1_cfg = cfg['STAGE1']
         num_channels = self.stage1_cfg['NUM_CHANNELS'][0]
@@ -893,7 +893,7 @@ class HighResolutionNet(nn.Module):
                 nn.Conv2d(
                     in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=2, padding=1),
                 nn.BatchNorm2d(out_channels, momentum=_BN_MOMENTUM),
-                nn.ReLU(inplace=True)
+                nn.LeakyReLU(inplace=True)
             )
             downsamp_modules.append(downsamp_module)
         downsamp_modules = nn.ModuleList(downsamp_modules)
@@ -904,7 +904,7 @@ class HighResolutionNet(nn.Module):
                 out_channels=self.num_features, kernel_size=1, stride=1, padding=0
             ),
             nn.BatchNorm2d(self.num_features, momentum=_BN_MOMENTUM),
-            nn.ReLU(inplace=True)
+            nn.LeakyReLU(inplace=True)
         )
 
         return incre_modules, downsamp_modules, final_layer
@@ -920,7 +920,7 @@ class HighResolutionNet(nn.Module):
                     transition_layers.append(nn.Sequential(
                         nn.Conv2d(num_channels_pre_layer[i], num_channels_cur_layer[i], 3, 1, 1, bias=False),
                         nn.BatchNorm2d(num_channels_cur_layer[i], momentum=_BN_MOMENTUM),
-                        nn.ReLU(inplace=True)))
+                        nn.LeakyReLU(inplace=True)))
                 else:
                     transition_layers.append(nn.Identity())
             else:
@@ -931,7 +931,7 @@ class HighResolutionNet(nn.Module):
                     conv3x3s.append(nn.Sequential(
                         nn.Conv2d(inchannels, outchannels, 3, 2, 1, bias=False),
                         nn.BatchNorm2d(outchannels, momentum=_BN_MOMENTUM),
-                        nn.ReLU(inplace=True)))
+                        nn.LeakyReLU(inplace=True)))
                 transition_layers.append(nn.Sequential(*conv3x3s))
 
         return nn.ModuleList(transition_layers)
@@ -1006,6 +1006,7 @@ class HighResolutionNet(nn.Module):
                 y = self.incre_modules[i + 1](yl[i + 1])
         features = self.final_layer(y)
         features = self.to_feature(self.feature_mapper(features.mean((2, 3))))
+        features = F.normalize(features, dim=1)
 
         return features, seg
 

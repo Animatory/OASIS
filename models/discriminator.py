@@ -1,8 +1,31 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-from registry import DISCRIMINATORS
 import models.norms as norms
+from registry import DISCRIMINATORS
+
+
+class StyleVectorizer(nn.Module):
+    def __init__(self, emb, depth, is_discriminator=False):
+        super().__init__()
+        self.is_discriminator = is_discriminator
+
+        layers = []
+        for i in range(depth - 1):
+            layers.extend([nn.Linear(emb, emb), nn.LayerNorm(emb), nn.LeakyReLU(0.2, inplace=True)])
+
+        if is_discriminator:
+            layers.append(nn.Linear(emb, 1))
+        else:
+            layers.append(nn.Linear(emb, emb))
+
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        if not self.is_discriminator:
+            x = F.normalize(x, dim=1)
+        return self.net(x)
 
 
 @DISCRIMINATORS.register_model
@@ -28,6 +51,11 @@ class OASIS_Discriminator(nn.Module):
                                                        norm_layer=sp_norm, up_or_down=1))
         self.layer_up_last = nn.Conv2d(64, output_channel, 1, 1, 0)
 
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        # self.feature_linear = nn.Linear(self.num_features, self.opt.z_dim * 2)
+        self.feature_mapper = nn.Linear(self.channels[-1], self.opt.z_dim)
+        self.to_feature = StyleVectorizer(opt.z_dim, 3, is_discriminator=False)
+
         self.init_weights()
 
     def forward(self, x):
@@ -36,12 +64,15 @@ class OASIS_Discriminator(nn.Module):
         for i in range(len(self.body_down)):
             x = self.body_down[i](x)
             encoder_res.append(x)
+
+        features = self.to_feature(self.feature_mapper(x.mean((2, 3))))
+
         # decoder
         x = self.body_up[0](x)
         for i in range(1, len(self.body_down)):
             x = self.body_up[i](torch.cat((encoder_res[-i - 1], x), dim=1))
         ans = self.layer_up_last(x)
-        return ans
+        return features, ans
 
     def init_weights(self, gain=0.02):
         for m in self.modules():

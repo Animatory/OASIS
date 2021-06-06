@@ -27,7 +27,7 @@ def run():
     dataloader, dataloader_val, dataset_train, dataset_val = dataloaders.get_dataloaders(opt)
     im_saver = utils.ImageSaver(opt)
     fid_computer = FIDCalculator(opt, dataloader_val)
-    metric_meter = MetricManager(opt)
+    # metric_meter = MetricManager(opt)
 
     # --- create models ---#
     model = models.OASIS(opt)
@@ -43,7 +43,7 @@ def run():
     optimizerD = torch.optim.AdamW(D_params, lr=opt.lr_d, betas=(opt.beta1, opt.beta2))
 
     [model], [optimizerD, optimizerG] = amp.initialize(
-        [model], [optimizerD, optimizerG], loss_scale=0.5,
+        [model], [optimizerD, optimizerG], loss_scale="dynamic", max_loss_scale=0.1,
         opt_level=opt.opt_level, num_losses=2)
     optimizerD._lazy_init_maybe_master_weights()
     optimizerG._lazy_init_maybe_master_weights()
@@ -68,6 +68,9 @@ def run():
             data = models.preprocess_input(opt, data_i)
 
             loss_d, loss_g = trainer.train_step_fast_gan(data, cur_iter)
+
+            if torch.isnan(loss_d):
+                raise ValueError('Got Nan loss')
             t.set_description_str(f'G loss: {loss_g:.4f}, D loss: {loss_d:.4f}', refresh=False)
 
             # --- stats update ---#
@@ -91,16 +94,16 @@ def run():
                         model.save_networks(cur_iter, best=True)
         t.close()
 
-        t = tqdm(dataloader_val, total=len(dataloader_val))
-        for i, data_i in enumerate(t):
-            data = models.preprocess_input(opt, data_i)
-            targets = data['label'].argmax(1)
-            predictions, _ = model.forward(**data, mode='predict')
-            metric_meter.update(targets, predictions)
-        t.close()
-        torch.cuda.empty_cache()
-        ious_per_class = metric_meter.on_epoch_end(epoch)
-        print(f'Epoch {epoch}, mIoU: {np.mean(ious_per_class)}')
+        # t = tqdm(dataloader_val, total=len(dataloader_val))
+        # for i, data_i in enumerate(t):
+        #     data = models.preprocess_input(opt, data_i)
+        #     targets = data['label'].argmax(1)
+        #     predictions, _ = model.forward(**data, mode='predict')
+        #     metric_meter.update(targets, predictions)
+        # t.close()
+        # torch.cuda.empty_cache()
+        # ious_per_class = metric_meter.on_epoch_end(epoch)
+        # print(f'Epoch {epoch}, mIoU: {np.mean(ious_per_class)}')
         # dataloader = resample_dataset(opt, dataset_train, ious_per_class)
 
     # --- after training ---#
