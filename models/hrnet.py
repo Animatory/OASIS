@@ -17,7 +17,7 @@ from registry import DISCRIMINATORS
 from .models_fast import StyleVectorizer
 
 # BatchNorm2d = torch.nn.SyncBatchNorm
-BatchNorm2d = torch.nn.BatchNorm2d
+BatchNorm2d = torch.nn.InstanceNorm2d
 ALIGN_CORNERS = True
 _BN_MOMENTUM = 0.1
 _logger = logging.getLogger(__name__)
@@ -536,7 +536,7 @@ class HRNetOCR(nn.Module):
 
         self.conv3x3_ocr = nn.Sequential(
             nn.Conv2d(encoder_channels, ocr_mid_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(ocr_mid_channels),
+            nn.InstanceNorm2d(ocr_mid_channels),
             nn.LeakyReLU()
         )
 
@@ -554,7 +554,7 @@ class HRNetOCR(nn.Module):
         self.aux_head = nn.Sequential(
             nn.Conv2d(encoder_channels, encoder_channels,
                       kernel_size=1, stride=1, padding=0),
-            nn.BatchNorm2d(encoder_channels),
+            nn.InstanceNorm2d(encoder_channels),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(encoder_channels, num_classes,
                       kernel_size=1, stride=1, padding=0, bias=True)
@@ -598,7 +598,7 @@ class HRNetHead(nn.Module):
         self.aux_head = nn.Sequential(
             nn.Conv2d(encoder_channels, encoder_channels,
                       kernel_size=1, stride=1, padding=0),
-            nn.BatchNorm2d(encoder_channels),
+            nn.InstanceNorm2d(encoder_channels),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(encoder_channels, num_classes,
                       kernel_size=1, stride=1, padding=0, bias=True)
@@ -718,7 +718,7 @@ class HighResolutionModule(nn.Module):
             downsample = nn.Sequential(
                 nn.Conv2d(self.num_inchannels[branch_index], expanded_channels,
                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(expanded_channels, momentum=_BN_MOMENTUM),
+                nn.InstanceNorm2d(expanded_channels, momentum=_BN_MOMENTUM),
             )
 
         layers = [block(self.num_inchannels[branch_index], num_channels[branch_index], stride, downsample)]
@@ -748,7 +748,7 @@ class HighResolutionModule(nn.Module):
                 if j > i:
                     fuse_layer.append(nn.Sequential(
                         nn.Conv2d(num_inchannels[j], num_inchannels[i], 1, 1, 0, bias=False),
-                        nn.BatchNorm2d(num_inchannels[i], momentum=_BN_MOMENTUM),
+                        nn.InstanceNorm2d(num_inchannels[i], momentum=_BN_MOMENTUM),
                         nn.Upsample(scale_factor=2 ** (j - i), mode='nearest')))
                 elif j == i:
                     fuse_layer.append(nn.Identity())
@@ -759,12 +759,12 @@ class HighResolutionModule(nn.Module):
                             num_outchannels_conv3x3 = num_inchannels[i]
                             conv3x3s.append(nn.Sequential(
                                 nn.Conv2d(num_inchannels[j], num_outchannels_conv3x3, 3, 2, 1, bias=False),
-                                nn.BatchNorm2d(num_outchannels_conv3x3, momentum=_BN_MOMENTUM)))
+                                nn.InstanceNorm2d(num_outchannels_conv3x3, momentum=_BN_MOMENTUM)))
                         else:
                             num_outchannels_conv3x3 = num_inchannels[j]
                             conv3x3s.append(nn.Sequential(
                                 nn.Conv2d(num_inchannels[j], num_outchannels_conv3x3, 3, 2, 1, bias=False),
-                                nn.BatchNorm2d(num_outchannels_conv3x3, momentum=_BN_MOMENTUM),
+                                nn.InstanceNorm2d(num_outchannels_conv3x3, momentum=_BN_MOMENTUM),
                                 nn.LeakyReLU(False)))
                     fuse_layer.append(nn.Sequential(*conv3x3s))
             fuse_layers.append(nn.ModuleList(fuse_layer))
@@ -810,10 +810,10 @@ class HighResolutionNet(nn.Module):
 
         stem_width = cfg['STEM_WIDTH']
         self.conv1 = nn.Conv2d(in_chans, stem_width, kernel_size=3, stride=2, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(stem_width, momentum=_BN_MOMENTUM)
+        self.bn1 = nn.InstanceNorm2d(stem_width, momentum=_BN_MOMENTUM)
         self.act1 = nn.LeakyReLU(inplace=True)
         self.conv2 = nn.Conv2d(stem_width, 64, kernel_size=3, stride=2, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(64, momentum=_BN_MOMENTUM)
+        self.bn2 = nn.InstanceNorm2d(64, momentum=_BN_MOMENTUM)
         self.act2 = nn.LeakyReLU(inplace=True)
 
         self.stage1_cfg = cfg['STAGE1']
@@ -892,7 +892,7 @@ class HighResolutionNet(nn.Module):
             downsamp_module = nn.Sequential(
                 nn.Conv2d(
                     in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=2, padding=1),
-                nn.BatchNorm2d(out_channels, momentum=_BN_MOMENTUM),
+                nn.InstanceNorm2d(out_channels, momentum=_BN_MOMENTUM),
                 nn.LeakyReLU(inplace=True)
             )
             downsamp_modules.append(downsamp_module)
@@ -903,7 +903,7 @@ class HighResolutionNet(nn.Module):
                 in_channels=self.head_channels[3] * head_block.expansion,
                 out_channels=self.num_features, kernel_size=1, stride=1, padding=0
             ),
-            nn.BatchNorm2d(self.num_features, momentum=_BN_MOMENTUM),
+            nn.InstanceNorm2d(self.num_features, momentum=_BN_MOMENTUM),
             nn.LeakyReLU(inplace=True)
         )
 
@@ -919,7 +919,7 @@ class HighResolutionNet(nn.Module):
                 if num_channels_cur_layer[i] != num_channels_pre_layer[i]:
                     transition_layers.append(nn.Sequential(
                         nn.Conv2d(num_channels_pre_layer[i], num_channels_cur_layer[i], 3, 1, 1, bias=False),
-                        nn.BatchNorm2d(num_channels_cur_layer[i], momentum=_BN_MOMENTUM),
+                        nn.InstanceNorm2d(num_channels_cur_layer[i], momentum=_BN_MOMENTUM),
                         nn.LeakyReLU(inplace=True)))
                 else:
                     transition_layers.append(nn.Identity())
@@ -930,7 +930,7 @@ class HighResolutionNet(nn.Module):
                     outchannels = num_channels_cur_layer[i] if j == i - num_branches_pre else inchannels
                     conv3x3s.append(nn.Sequential(
                         nn.Conv2d(inchannels, outchannels, 3, 2, 1, bias=False),
-                        nn.BatchNorm2d(outchannels, momentum=_BN_MOMENTUM),
+                        nn.InstanceNorm2d(outchannels, momentum=_BN_MOMENTUM),
                         nn.LeakyReLU(inplace=True)))
                 transition_layers.append(nn.Sequential(*conv3x3s))
 
@@ -941,7 +941,7 @@ class HighResolutionNet(nn.Module):
         if stride != 1 or inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 nn.Conv2d(inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion, momentum=_BN_MOMENTUM),
+                nn.InstanceNorm2d(planes * block.expansion, momentum=_BN_MOMENTUM),
             )
 
         layers = [block(inplanes, planes, stride, downsample)]
@@ -984,7 +984,6 @@ class HighResolutionNet(nn.Module):
 
     def forward(self, x):
         orig_x = x
-        # x = F.interpolate(x, scale_factor=(256, 256), mode='bilinear', align_corners=True)
 
         # Stem
         x = self.conv1(x)
@@ -997,7 +996,6 @@ class HighResolutionNet(nn.Module):
         # Stages
         yl = self.stages(x)
         seg = self.head([orig_x] + yl)
-        # features = self.head_features([orig_x] + yl)
 
         y = self.incre_modules[0](yl[0])
         for i in range(len(self.downsamp_modules)):
@@ -1034,17 +1032,17 @@ def hrnet_w18_small(pretrained=True, **kwargs):
 
 
 @DISCRIMINATORS.register_model
-def hrnet_w18_small_v2(pretrained=True, **kwargs):
+def hrnet_w18_small_v2(pretrained=False, **kwargs):
     return _create_hrnet('hrnet_w18_small_v2', pretrained, **kwargs)
 
 
 @DISCRIMINATORS.register_model
-def hrnet_w18(pretrained=True, **kwargs):
+def hrnet_w18(pretrained=False, **kwargs):
     return _create_hrnet('hrnet_w18', pretrained, **kwargs)
 
 
 @DISCRIMINATORS.register_model
-def hrnet_w30(pretrained=True, **kwargs):
+def hrnet_w30(pretrained=False, **kwargs):
     return _create_hrnet('hrnet_w30', pretrained, **kwargs)
 
 
